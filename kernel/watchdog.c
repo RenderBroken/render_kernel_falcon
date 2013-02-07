@@ -30,7 +30,7 @@
 #include <mach/mmi_watchdog.h>
 
 int watchdog_enabled = 1;
-int __read_mostly watchdog_thresh = 5;
+int __read_mostly watchdog_thresh = 10;
 
 static DEFINE_PER_CPU(unsigned long, watchdog_touch_ts);
 static DEFINE_PER_CPU(struct task_struct *, softlockup_watchdog);
@@ -310,21 +310,8 @@ static enum hrtimer_restart watchdog_timer_fn(struct hrtimer *hrtimer)
 		else
 			dump_stack();
 
-		if (softlockup_panic) {
-
-			if (is_csd_lock_waiting()) {
-				printk(KERN_ERR "softlockup: trigger watchdog reset!\n");
-				/*
-				 * Preemption has been diabled in current
-				 * context. And in case it fails to trigger
-				 * watchdog reset, handle it as normal
-				 * softlockup panic.
-				 */
-				trigger_watchdog_reset();
-			}
-			add_taint(TAINT_DIE);
+		if (softlockup_panic)
 			panic("softlockup: hung tasks");
-		}
 		__this_cpu_write(soft_watchdog_warn, true);
 	} else
 		__this_cpu_write(soft_watchdog_warn, false);
