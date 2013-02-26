@@ -357,14 +357,16 @@ static int __cpuinit cpu_stop_cpu_callback(struct notifier_block *nfb,
 	return NOTIFY_OK;
 }
 
-/*
- * Give it a higher priority so that cpu stopper is available to other
- * cpu notifiers.  It currently shares the same priority as sched
- * migration_notifier.
- */
-static struct notifier_block __cpuinitdata cpu_stop_cpu_notifier = {
-	.notifier_call	= cpu_stop_cpu_callback,
-	.priority	= 10,
+static struct smp_hotplug_thread cpu_stop_threads = {
+	.store			= &cpu_stopper_task,
+	.thread_should_run	= cpu_stop_should_run,
+	.thread_fn		= cpu_stopper_thread,
+	.thread_comm		= "migration/%u",
+	.create			= cpu_stop_create,
+	.setup			= cpu_stop_unpark,
+	.park			= cpu_stop_park,
+	.pre_unpark		= cpu_stop_unpark,
+	.selfparking		= true,
 };
 
 static int __init cpu_stop_init(void)
