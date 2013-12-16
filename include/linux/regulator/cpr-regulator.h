@@ -67,6 +67,21 @@ enum cpr_corner_enum {
 };
 
 /**
+ * enum pvs_process_enum - PVS process enum values
+ * %APC_PVS_NO:		No PVS
+ * %APC_PVS_SLOW:	Slow PVS process
+ * %APC_PVS_NOM:	Nominal PVS process
+ * %APC_PVS_FAST:	Fast PVS process
+ */
+enum apc_pvs_process_enum {
+	APC_PVS_NO,
+	APC_PVS_SLOW,
+	APC_PVS_NOM,
+	APC_PVS_FAST,
+	NUM_APC_PVS,
+};
+
+/**
  * enum vdd_mx_vmin_method - Method to determine vmin for vdd-mx
  * %VDD_MX_VMIN_APC:			Equal to APC voltage
  * %VDD_MX_VMIN_APC_CORNER_CEILING:	Equal to PVS corner ceiling voltage
