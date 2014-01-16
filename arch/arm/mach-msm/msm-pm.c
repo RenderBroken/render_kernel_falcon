@@ -28,8 +28,10 @@
 #include <asm/uaccess.h>
 #include <asm/suspend.h>
 #include <asm/cacheflush.h>
-#include <asm/outercache.h>
 #include <mach/scm.h>
+#ifdef CONFIG_VFP
+#include <asm/vfp.h>
+#endif
 #include <mach/msm_bus.h>
 #include <mach/jtag.h>
 #include "acpuclock.h"
@@ -117,9 +119,6 @@ static struct msm_pm_sleep_status_data *msm_pm_slp_sts;
 DEFINE_PER_CPU(struct clk *, cpu_clks);
 static struct clk *l2_clk;
 
-static void (*msm_pm_disable_l2_fn)(void);
-static void (*msm_pm_enable_l2_fn)(void);
-static void (*msm_pm_flush_l2_fn)(void);
 static void __iomem *msm_pc_debug_counters;
 
 /*
@@ -141,40 +140,6 @@ static enum msm_pm_l2_scm_flag msm_pm_get_l2_flush_flag(void)
 
 static cpumask_t retention_cpus;
 static DEFINE_SPINLOCK(retention_lock);
-
-static int msm_pm_get_pc_mode(struct device_node *node,
-		const char *key, uint32_t *pc_mode_val)
-{
-	struct pc_mode_of {
-		uint32_t mode;
-		char *mode_name;
-	};
-	int i;
-	struct pc_mode_of pc_modes[] = {
-				{MSM_PM_PC_TZ_L2_INT, "tz_l2_int"},
-				{MSM_PM_PC_NOTZ_L2_EXT, "no_tz_l2_ext"},
-				{MSM_PM_PC_TZ_L2_EXT , "tz_l2_ext"} };
-	int ret;
-	const char *pc_mode_str;
-	*pc_mode_val = MSM_PM_PC_TZ_L2_INT;
-
-	ret = of_property_read_string(node, key, &pc_mode_str);
-	if (!ret) {
-		ret = -EINVAL;
-		for (i = 0; i < ARRAY_SIZE(pc_modes); i++) {
-			if (!strncmp(pc_mode_str, pc_modes[i].mode_name,
-				strlen(pc_modes[i].mode_name))) {
-				*pc_mode_val = pc_modes[i].mode;
-				ret = 0;
-				break;
-			}
-		}
-	} else {
-		pr_debug("%s: Cannot read %s,defaulting to 0", __func__, key);
-		ret = 0;
-	}
-	return ret;
-}
 
 /*
  * Write out the attribute.
@@ -479,15 +444,10 @@ static int msm_pm_collapse(unsigned long unused)
 {
 	uint32_t cpu = smp_processor_id();
 
-	if (msm_pm_get_l2_flush_flag() == MSM_SCM_L2_OFF) {
+	if (msm_pm_get_l2_flush_flag() == MSM_SCM_L2_OFF)
 		flush_cache_all();
-		if (msm_pm_flush_l2_fn)
-			msm_pm_flush_l2_fn();
-	} else if (msm_pm_is_L1_writeback())
+	else if (msm_pm_is_L1_writeback())
 		flush_cache_louis();
-
-	if (msm_pm_disable_l2_fn)
-		msm_pm_disable_l2_fn();
 
 	msm_pc_inc_debug_count(cpu, MSM_PC_ENTRY_COUNTER);
 
@@ -495,9 +455,6 @@ static int msm_pm_collapse(unsigned long unused)
 				msm_pm_get_l2_flush_flag());
 
 	msm_pc_inc_debug_count(cpu, MSM_PC_FALLTHRU_COUNTER);
-
-	if (msm_pm_enable_l2_fn)
-		msm_pm_enable_l2_fn();
 
 	return 0;
 }
@@ -999,18 +956,6 @@ static int msm_pm_init(void)
 	return 0;
 }
 
-static void msm_pm_set_flush_fn(uint32_t pc_mode)
-{
-	msm_pm_disable_l2_fn = NULL;
-	msm_pm_enable_l2_fn = NULL;
-	msm_pm_flush_l2_fn = outer_flush_all;
-
-	if (pc_mode == MSM_PM_PC_NOTZ_L2_EXT) {
-		msm_pm_disable_l2_fn = outer_disable;
-		msm_pm_enable_l2_fn = outer_resume;
-	}
-}
-
 struct msm_pc_debug_counters_buffer {
 	void __iomem *reg;
 	u32 len;
@@ -1161,14 +1106,10 @@ static int msm_pm_clk_init(struct platform_device *pdev)
 
 static int msm_cpu_pm_probe(struct platform_device *pdev)
 {
-	char *key = NULL;
 	struct dentry *dent = NULL;
 	struct resource *res = NULL;
 	int i;
-	struct msm_pm_init_data_type pdata_local;
 	int ret = 0;
-
-	memset(&pdata_local, 0, sizeof(struct msm_pm_init_data_type));
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res)
@@ -1193,21 +1134,11 @@ static int msm_cpu_pm_probe(struct platform_device *pdev)
 	}
 
 	if (pdev->dev.of_node) {
-		enum msm_pm_pc_mode_type pc_mode;
-
 		ret = msm_pm_clk_init(pdev);
 		if (ret) {
 			pr_info("msm_pm_clk_init returned error\n");
 			return ret;
 		}
-
-		key = "qcom,pc-mode";
-		ret = msm_pm_get_pc_mode(pdev->dev.of_node, key, &pc_mode);
-		if (ret) {
-			pr_debug("%s: Error reading key %s", __func__, key);
-			return -EINVAL;
-		}
-		msm_pm_set_flush_fn(pc_mode);
 	}
 
 	msm_pm_init();
