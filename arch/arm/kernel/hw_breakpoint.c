@@ -222,6 +222,20 @@ static int get_num_brps(void)
 	return core_has_mismatch_brps() ? brps - 1 : brps;
 }
 
+/* Determine if halting mode is enabled */
+static int halting_mode_enabled(void)
+{
+	u32 dscr;
+
+	ARM_DBG_READ(c1, 0, dscr);
+
+	if (WARN_ONCE(dscr & ARM_DSCR_HDBGEN,
+		      "halting debug mode enabled. "
+		      "Unable to access hardware resources.\n"))
+		return -EPERM;
+	return 0;
+}
+
 /*
  * In order to access the breakpoint/watchpoint control registers,
  * we must be running in debug monitor mode. Unfortunately, we can
@@ -231,7 +245,14 @@ static int get_num_brps(void)
 static int enable_monitor_mode(void)
 {
 	u32 dscr;
+	int ret;
+
 	ARM_DBG_READ(c1, 0, dscr);
+
+	/* Ensure that halting mode is disabled. */
+	ret = halting_mode_enabled();
+	if (ret)
+		goto out;
 
 	/* If monitor mode is already enabled, just return. */
 	if (dscr & ARM_DSCR_MDBGEN)
@@ -965,6 +986,10 @@ clear_vcr:
 		pr_warning("CPU %d failed to disable vector catch\n", cpu);
 		return;
 	}
+
+reset_regs:
+	if (halting_mode_enabled())
+		return;
 
 reset_regs:
 	/*
