@@ -1,6 +1,6 @@
 VERSION = 3
 PATCHLEVEL = 4
-SUBLEVEL = 87
+SUBLEVEL = 88
 EXTRAVERSION =
 NAME = Saber-toothed Squirrel
 
@@ -356,13 +356,19 @@ CC		= $(srctree)/scripts/gcc-wrapper.py $(REAL_CC)
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
-KERNELFLAGS	= -munaligned-access -fgcse-lm -fgcse-sm -fsched-spec-load -fforce-addr -ffast-math -fsingle-precision-constant -marm -mfpu=neon -ftree-vectorize -mvectorize-with-neon-quad -funroll-loops
-MODFLAGS	= -DMODULE $(KERNELFLAGS)
-CFLAGS_MODULE   = $(MODFLAGS)
-AFLAGS_MODULE   = $(MODFLAGS)
-LDFLAGS_MODULE  = -T $(srctree)/scripts/module-common.lds
-CFLAGS_KERNEL	= $(KERNELFLAGS)
-AFLAGS_KERNEL	= $(KERNELFLAGS)
+CFLAGS_MODULE   = -DMODULE -fno-pic -mcpu=cortex-a7 -mtune=cortex-a7 \
+		  -mfpu=neon-vfpv4 -funsafe-math-optimizations \
+		  -ffast-math -fsingle-precision-constant \
+                  -fgcse-lm -fgcse-sm -fsched-spec-load -fforce-addr \
+		  -munaligned-access
+AFLAGS_MODULE   = -ffast-math
+LDFLAGS_MODULE  =
+CFLAGS_KERNEL	= -mcpu=cortex-a7 -mtune=cortex-a7 \
+		  -mfpu=neon-vfpv4 -funsafe-math-optimizations \
+		  -ffast-math -fsingle-precision-constant \
+                  -fgcse-lm -fgcse-sm -fsched-spec-load -fforce-addr \
+		  -munaligned-access
+AFLAGS_KERNEL	= -ffast-math
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
 
 
@@ -379,9 +385,13 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
-		   -Wno-maybe-uninitialized \
-		   -fno-delete-null-pointer-checks
-KBUILD_AFLAGS_KERNEL :=
+		   -fno-delete-null-pointer-checks \
+		   -mcpu=cortex-a7 -mtune=cortex-a7 \
+		   -mfpu=neon-vfpv4 -funsafe-math-optimizations \
+		   -ffast-math -fsingle-precision-constant \
+                   -fgcse-lm -fgcse-sm -fsched-spec-load -fforce-addr \
+		   -munaligned-access
+KBUILD_AFLAGS_KERNEL := -ffast-math
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS   := -D__ASSEMBLY__
 KBUILD_AFLAGS_MODULE  := -DMODULE
@@ -573,7 +583,10 @@ all: vmlinux
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS	+= -Os $(call cc-disable-warning,maybe-uninitialized,)
 else
-KBUILD_CFLAGS	+= -O2
+KBUILD_CFLAGS	+= -O3 
+KBUILD_CFLAGS	+= $(call cc-disable-warning,maybe-uninitialized,)
+KBUILD_CFLAGS   += $(call cc-disable-warning,array-bounds)
+KBUILD_CFLAGS   += -fmodulo-sched -fmodulo-sched-allow-regmoves -fno-tree-vectorize
 endif
 
 include $(srctree)/arch/$(SRCARCH)/Makefile
@@ -590,19 +603,6 @@ endif
 # This warning generated too much noise in a regular build.
 # Use make W=1 to enable this warning (see scripts/Makefile.build)
 KBUILD_CFLAGS += $(call cc-disable-warning, unused-but-set-variable)
-
-ifdef CONFIG_FRAME_POINTER
-KBUILD_CFLAGS	+= -fno-omit-frame-pointer -fno-optimize-sibling-calls
-else
-# Some targets (ARM with Thumb2, for example), can't be built with frame
-# pointers.  For those, we don't have FUNCTION_TRACER automatically
-# select FRAME_POINTER.  However, FUNCTION_TRACER adds -pg, and this is
-# incompatible with -fomit-frame-pointer with current GCC, so we don't use
-# -fomit-frame-pointer with FUNCTION_TRACER.
-ifndef CONFIG_FUNCTION_TRACER
-KBUILD_CFLAGS	+= -fomit-frame-pointer
-endif
-endif
 
 ifdef CONFIG_DEBUG_INFO
 KBUILD_CFLAGS	+= -g
