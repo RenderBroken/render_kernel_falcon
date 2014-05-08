@@ -54,8 +54,10 @@ struct cpufreq_interactive_cpuinfo {
 	struct rw_semaphore enable_sem;
 	int governor_enabled;
 	int prev_load;
-	bool minfreq_boosted;
+	bool limits_changed;
 };
+
+#define MIN_TIMER_JIFFIES 1UL
 
 static DEFINE_PER_CPU(struct cpufreq_interactive_cpuinfo, cpuinfo);
 
@@ -126,7 +128,7 @@ static bool io_is_busy;
 
 /*
  * If the max load among other CPUs is higher than up_threshold_any_cpu_load
- * and if the highest frequency among the other CPUs is higher than
+ * or if the highest frequency among the other CPUs is higher than
  * up_threshold_any_cpu_freq then do not let the frequency to drop below
  * sync_freq
  */
@@ -403,6 +405,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	unsigned long mod_min_sample_time;
 	int i, max_load;
 	unsigned int max_freq;
+	unsigned int boosted_freq;
 	struct cpufreq_interactive_cpuinfo *picpu;
 
 	if (!down_read_trylock(&pcpu->enable_sem))
@@ -424,15 +427,16 @@ static void cpufreq_interactive_timer(unsigned long data)
 	cpu_load = loadadjfreq / pcpu->target_freq;
 	pcpu->prev_load = cpu_load;
 	boosted = boost_val || now < boostpulse_endtime;
+	boosted_freq = max(hispeed_freq, pcpu->policy->min);
 
-	if (cpu_load >= go_hispeed_load || boosted) {
-		if (pcpu->target_freq < hispeed_freq) {
-			new_freq = hispeed_freq;
+	if (cpu_load >= go_hispeed_load || boosted || pcpu->limits_changed) {
+		if (pcpu->target_freq < boosted_freq) {
+			new_freq = boosted_freq;
 		} else {
 			new_freq = choose_freq(pcpu, loadadjfreq);
 
-			if (new_freq < hispeed_freq)
-				new_freq = hispeed_freq;
+			if (new_freq < boosted_freq)
+				new_freq = boosted_freq;
 		}
 	} else {
 		new_freq = choose_freq(pcpu, loadadjfreq);
@@ -453,13 +457,13 @@ static void cpufreq_interactive_timer(unsigned long data)
 				max_freq = max(max_freq, picpu->target_freq);
 			}
 
-			if (max_freq > up_threshold_any_cpu_freq &&
+			if (max_freq > up_threshold_any_cpu_freq ||
 				max_load >= up_threshold_any_cpu_load)
 				new_freq = sync_freq;
 		}
 	}
 
-	if (pcpu->target_freq >= hispeed_freq &&
+	if (pcpu->target_freq >= boosted_freq &&
 	    new_freq > pcpu->target_freq &&
 	    now - pcpu->hispeed_validate_time <
 	    freq_to_above_hispeed_delay(pcpu->target_freq)) {
@@ -487,10 +491,14 @@ static void cpufreq_interactive_timer(unsigned long data)
 	else
 		mod_min_sample_time = min_sample_time;
 
-	if (pcpu->minfreq_boosted) {
-		mod_min_sample_time = 0;
-		pcpu->minfreq_boosted = false;
+	if (pcpu->limits_changed) {
+		if (sampling_down_factor &&
+			(pcpu->policy->cur != pcpu->policy->max))
+			mod_min_sample_time = 0;
+
+		pcpu->limits_changed = false;
 	}
+
 	if (new_freq < pcpu->floor_freq) {
 		if (now - pcpu->floor_validate_time < mod_min_sample_time) {
 			trace_cpufreq_interactive_notyet(
@@ -503,12 +511,12 @@ static void cpufreq_interactive_timer(unsigned long data)
 	/*
 	 * Update the timestamp for checking whether speed has been held at
 	 * or above the selected frequency for a minimum of min_sample_time,
-	 * if not boosted to hispeed_freq.  If boosted to hispeed_freq then we
+	 * if not boosted to boosted_freq.  If boosted to boosted_freq then we
 	 * allow the speed to drop as soon as the boostpulse duration expires
 	 * (or the indefinite boost is turned off).
 	 */
 
-	if (!boosted || new_freq > hispeed_freq) {
+	if (!boosted || new_freq > boosted_freq) {
 		pcpu->floor_freq = new_freq;
 		pcpu->floor_validate_time = now;
 	}
@@ -1235,12 +1243,10 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 	unsigned int j;
 	struct cpufreq_interactive_cpuinfo *pcpu;
 	struct cpufreq_frequency_table *freq_table;
+	unsigned long expire_time;
 
 	switch (event) {
 	case CPUFREQ_GOV_START:
-		if (!cpu_online(policy->cpu))
-			return -EINVAL;
-
 		mutex_lock(&gov_lock);
 
 		freq_table =
@@ -1334,30 +1340,40 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			/* update target_freq firstly */
 			if (policy->max < pcpu->target_freq)
 				pcpu->target_freq = policy->max;
+			/*
+			 * Delete and reschedule timer.
+			 * Else the timer callback may return without
+			 * re-arming the timer when it fails to acquire
+			 * the semaphore. This race condition may cause the
+			 * timer to stop unexpectedly.
+			 */
+			del_timer_sync(&pcpu->cpu_timer);
+			del_timer_sync(&pcpu->cpu_slack_timer);
 			if (policy->min >= pcpu->target_freq) {
 				pcpu->target_freq = policy->min;
-				/* Reschedule timer.
+				/*
+				 * Reschedule timer.
 				 * The governor needs more time to evaluate
-				 * the load after changing policy parameters
+				 * the load after changing policy parameters.
 				 */
-				del_timer_sync(&pcpu->cpu_timer);
-				del_timer_sync(&pcpu->cpu_slack_timer);
 				cpufreq_interactive_timer_start(j, 0);
 			} else {
-				/* Reschedule timer.
-				 * Delete the timers, else the timer callback
-				 * may return without re-arm the timer when
-				 * failed to acquire the semaphore. This race
-				 * may cause timer stopped unexpectedly.
+				/*
+				 * Reschedule timer with variable duration.
+				 * No boost was applied so the governor
+				 * doesn't need extra time to evaluate load.
+				 * The timer can be set to fire quicker if it
+				 * was already going to expire soon.
 				 */
-				del_timer_sync(&pcpu->cpu_timer);
-				del_timer_sync(&pcpu->cpu_slack_timer);
-				if (pcpu->cpu_timer.expires - jiffies > 1)
-					cpufreq_interactive_timer_start(j, 0);
-				else
-					cpufreq_interactive_timer_start(j, 1);
+				expire_time = pcpu->cpu_timer.expires - jiffies;
+				expire_time = min(usecs_to_jiffies(timer_rate),
+						  expire_time);
+				expire_time = max(MIN_TIMER_JIFFIES,
+						  expire_time);
+
+				cpufreq_interactive_timer_start(j, expire_time);
 			}
-			pcpu->minfreq_boosted = true;
+			pcpu->limits_changed = true;
 			up_write(&pcpu->enable_sem);
 		}
 		break;
