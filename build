@@ -3,11 +3,11 @@
 # Final zip will exist in "build" as "furnace-1.0.0-aosp_hammerhead.zip" for example
 # If you are using a non-appended dt.image, you will need to add "--dt path/to/dt.img" and
 # the appropriate lines for dtbTool to compile it, if not prebuilt.
-build=/home/renderbroken/android/source/zips/motog
+build=/home/renderbroken/android/source/zips/msm8226-test-zips/
 kernel="Render-Kernel"
-version="1.0.0"
+#version="1.0.0"
 rom="AOSP"
-ramdisk=/home/renderbroken/android/source/kernel/msm8226/ramdisk/
+ramdisk=/home/renderbroken/android/source/kernel/msm8226-test/ramdisk/
 toolchain=/home/renderbroken/android/source/toolchains/arm-cortex_a7-linux-gnueabihf-4.8.3/bin
 toolchain2="arm-cortex_a7-linux-gnueabihf-"
 config="render_defconfig"
@@ -116,8 +116,8 @@ fi
 echo "Zipping..."
 if [ -f arch/arm/boot/"$kerneltype" ]; then
 	cd ozip
-	zip -r ../"$kernel"-$version-"$rom"-$CURRENTDATE.zip .
-	mv ../"$kernel"-$version-"$rom"-$CURRENTDATE.zip $build
+	zip -r ../"$kernel"-"$rom"-$CURRENTDATE.zip .
+	mv ../"$kernel"-"$rom"-$CURRENTDATE.zip $build
 	cd ..
 	rm -rf /home/renderbroken/android/source/out/motog/*
 	echo "Done..."

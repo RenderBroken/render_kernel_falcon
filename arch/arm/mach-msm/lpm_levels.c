@@ -212,6 +212,7 @@ static int lpm_set_l2_mode(struct lpm_system_state *system_state,
 
 	switch (sleep_mode) {
 	case MSM_SPM_L2_MODE_POWER_COLLAPSE:
+		pr_info("Configuring for L2 power collapse\n");
 		msm_pm_set_l2_flush_flag(MSM_SCM_L2_OFF);
 		break;
 	case MSM_SPM_L2_MODE_GDHS:
@@ -754,7 +755,7 @@ static int lpm_cpuidle_enter(struct cpuidle_device *dev,
 	do_div(time, 1000);
 	dev->last_residency = (int)time;
 	local_irq_enable();
-	return index;
+	return idx;
 }
 
 static int lpm_suspend_enter(suspend_state_t state)
