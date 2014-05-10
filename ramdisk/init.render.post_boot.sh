@@ -45,7 +45,7 @@ echo 1 > /sys/module/msm_pm/modes/cpu0/power_collapse/idle_enabled
 echo 1 > /sys/devices/system/cpu/cpu1/online
 echo 1 > /sys/devices/system/cpu/cpu2/online
 echo 1 > /sys/devices/system/cpu/cpu3/online
-echo 1 > /sys/kernel/power_suspend/power_suspend_mode
+echo 0 > /sys/kernel/power_suspend/power_suspend_mode
 chmod 664 /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
 chown -h system /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
 chown -h system /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
@@ -56,11 +56,18 @@ chmod -h 664 /sys/devices/system/cpu/cpu1/online
 chmod -h 664 /sys/devices/system/cpu/cpu2/online
 chmod -h 664 /sys/devices/system/cpu/cpu3/online
 
+############################
+# CPU-Boost Settings
+#
+echo 20 > /sys/module/cpu_boost/parameters/boost_ms
+echo 1094400 > /sys/module/cpu_boost/parameters/sync_threshold
+echo 787200 > /sys/module/cpu_boost/parameters/input_boost_freq
+echo 40 > /sys/module/cpu_boost/parameters/input_boost_ms
 
 ############################
 # Showp's MPDEC activate
 #
-echo 1 > /sys/kernel/msm_mpdecision/conf/enabled
+#echo 1 > /sys/kernel/msm_mpdecision/conf/enabled
 
 ############################
 # Disable Faux's Intelliplug
@@ -96,9 +103,9 @@ echo 70 > /proc/sys/vm/swappiness
 ############################
 # Init VNSWAP
 #
-#echo 402653184 > /sys/block/vnswap0/disksize
-#mkswap /dev/block/vnswap0
-#swapon /dev/block/vnswap0
+echo 402653184 > /sys/block/vnswap0/disksize
+mkswap /dev/block/vnswap0
+swapon /dev/block/vnswap0
 
 ############################
 # render tweaks
