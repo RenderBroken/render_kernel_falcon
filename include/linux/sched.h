@@ -194,9 +194,10 @@ print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 #define TASK_DEAD		64
 #define TASK_WAKEKILL		128
 #define TASK_WAKING		256
-#define TASK_STATE_MAX		512
+#define TASK_PARKED		512
+#define TASK_STATE_MAX		1024
 
-#define TASK_STATE_TO_CHAR_STR "RSDTtZXxKW"
+#define TASK_STATE_TO_CHAR_STR "RSDTtZXxKWP"
 
 extern char ___assert_task_state[1 - 2*!!(
 		sizeof(TASK_STATE_TO_CHAR_STR)-1 != ilog2(TASK_STATE_MAX)+1)];
@@ -377,7 +378,10 @@ extern signed long schedule_timeout_killable(signed long timeout);
 extern signed long schedule_timeout_uninterruptible(signed long timeout);
 asmlinkage void schedule(void);
 extern void schedule_preempt_disabled(void);
+#ifdef CONFIG_MUTEX_SPIN_ON_OWNER
 extern int mutex_spin_on_owner(struct mutex *lock, struct task_struct *owner);
+extern int mutex_can_spin_on_owner(struct mutex *lock);
+#endif
 
 struct nsproxy;
 struct user_namespace;
@@ -549,6 +553,7 @@ struct signal_struct {
 	atomic_t		sigcnt;
 	atomic_t		live;
 	int			nr_threads;
+	struct list_head	thread_head;
 
 	wait_queue_head_t	wait_chldexit;	/* for wait4() */
 
@@ -1224,8 +1229,39 @@ struct sched_statistics {
 };
 #endif
 
+#define RAVG_HIST_SIZE  5
+
+/* ravg represents frequency scaled cpu-demand of tasks */
+struct ravg {
+	/*
+	 * 'window_start' marks the beginning of new window
+	 *
+	 * 'mark_start' marks the beginning of an event (task waking up, task
+	 * starting to execute, task being preempted) within a window
+	 *
+	 * 'sum' represents how runnable a task has been within current
+	 * window. It incorporates both running time and wait time and is
+	 * frequency scaled.
+	 *
+	 * 'sum_history' keeps track of history of 'sum' seen over previous
+	 * RAVG_HIST_SIZE windows. Windows where task was entirely sleeping are
+	 * ignored.
+	 *
+	 * 'demand' represents maximum sum seen over previous RAVG_HIST_SIZE
+	 * windows. 'demand' could drive frequency demand for tasks.
+	 */
+	u64 window_start, mark_start;
+	u32 sum, demand;
+	u32 sum_history[RAVG_HIST_SIZE];
+};
+
 struct sched_entity {
 	struct load_weight	load;		/* for load-balancing */
+	/*
+	 * Todo : Move ravg to 'struct task_struct', as this is common for both
+	 * real-time and non-realtime tasks
+	 */
+	struct ravg		ravg;
 	struct rb_node		run_node;
 	struct list_head	group_node;
 	unsigned int		on_rq;
@@ -1292,6 +1328,9 @@ struct task_struct {
 #ifdef CONFIG_SMP
 	struct llist_node wake_entry;
 	int on_cpu;
+	struct task_struct *last_wakee;
+	unsigned long wakee_flips;
+	unsigned long wakee_flip_decay_ts;
 #endif
 	int on_rq;
 
@@ -1411,6 +1450,7 @@ struct task_struct {
 	/* PID/PID hash table linkage. */
 	struct pid_link pids[PIDTYPE_MAX];
 	struct list_head thread_group;
+	struct list_head thread_node;
 
 	struct completion *vfork_done;		/* for vfork() */
 	int __user *set_child_tid;		/* CLONE_CHILD_SETTID */
@@ -2081,6 +2121,7 @@ extern unsigned int sysctl_sched_min_granularity;
 extern unsigned int sysctl_sched_wakeup_granularity;
 extern unsigned int sysctl_sched_child_runs_first;
 extern unsigned int sysctl_sched_wake_to_idle;
+extern unsigned int sysctl_sched_ravg_window;
 
 enum sched_tunable_scaling {
 	SCHED_TUNABLESCALING_NONE,
@@ -2412,6 +2453,16 @@ extern bool current_is_single_threaded(void);
 
 #define while_each_thread(g, t) \
 	while ((t = next_thread(t)) != g)
+
+#define __for_each_thread(signal, t)	\
+	list_for_each_entry_rcu(t, &(signal)->thread_head, thread_node)
+
+#define for_each_thread(p, t)		\
+	__for_each_thread((p)->signal, t)
+
+/* Careful: this is a double loop, 'break' won't work as expected. */
+#define for_each_process_thread(p, t)	\
+	for_each_process(p) for_each_thread(p, t)
 
 static inline int get_nr_threads(struct task_struct *tsk)
 {
@@ -2875,6 +2926,16 @@ static inline unsigned long rlimit_max(unsigned int limit)
 {
 	return task_rlimit_max(current, limit);
 }
+
+#ifdef CONFIG_CGROUP_TIMER_SLACK
+extern unsigned long task_get_effective_timer_slack(struct task_struct *tsk);
+#else
+static inline unsigned long task_get_effective_timer_slack(
+		struct task_struct *tsk)
+{
+	return tsk->timer_slack_ns;
+}
+#endif
 
 #endif /* __KERNEL__ */
 

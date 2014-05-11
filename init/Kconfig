@@ -60,6 +60,26 @@ config EXPERIMENTAL
 	  you say Y here, you will be offered the choice of using features or
 	  drivers that are currently considered to be in the alpha-test phase.
 
+config ZEN_INTERACTIVE
+	bool "Tune kernel for interactivity"
+	default y
+	help
+	  Tunes the kernel for responsiveness at the cost of throughput and power usage.
+
+	  --- VM ---
+	    Mem dirty before bg writeback..: 10 %  -> 20 %
+	    Mem dirty before sync writeback: 20 %  -> 50 %
+
+	  --- CPU Scheduler ---
+	    Scheduling latency.............:  6    ->  3    ms
+	    Minimal granularity............:  0.75 ->  0.3  ms
+	    Wakeup granularity.............:  1    ->  0.5  ms
+	    CPU migration cost.............:  0.5  ->  0.25 ms
+	    Bandwidth slice size...........:  5    ->  3    ms
+
+	  --- CPU Frequency Scaling ---
+	    Ondemand down scaling factor...:  1    -> 10
+
 config BROKEN
 	bool
 
@@ -607,6 +627,25 @@ config CGROUP_FREEZER
 	help
 	  Provides a way to freeze and unfreeze all tasks in a
 	  cgroup.
+
+config CGROUP_TIMER_SLACK
+	bool "Timer slack cgroup controller"
+	help
+	  Provides a way to set minimal timer slack value for tasks in
+	  a cgroup.
+	  It's useful in mobile devices where certain background apps
+	  are attached to a cgroup and combined wakeups are desired.
+
+config CGROUP_DYNAMIC_TIMER_SLACK
+	bool "Dynamic management of the minimal timer slack value during suspend/resume"
+	depends on CGROUP_TIMER_SLACK && HAS_EARLYSUSPEND
+	default n
+	help
+	  This feature allows to use different minimal timer slack value
+	  for the timer slack controller when the system is suspended and
+	  when the system has been resumed.
+
+	  If unsure, say N to disable this feature
 
 config CGROUP_DEVICE
 	bool "Device controller for cgroups"

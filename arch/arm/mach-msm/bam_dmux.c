@@ -52,10 +52,10 @@
 static int msm_bam_dmux_debug_enable;
 module_param_named(debug_enable, msm_bam_dmux_debug_enable,
 		   int, S_IRUGO | S_IWUSR | S_IWGRP);
-static int POLLING_MIN_SLEEP = 2950;
+static int POLLING_MIN_SLEEP = 4950;
 module_param_named(min_sleep, POLLING_MIN_SLEEP,
 		   int, S_IRUGO | S_IWUSR | S_IWGRP);
-static int POLLING_MAX_SLEEP = 3050;
+static int POLLING_MAX_SLEEP = 5000;
 module_param_named(max_sleep, POLLING_MAX_SLEEP,
 		   int, S_IRUGO | S_IWUSR | S_IWGRP);
 static int POLLING_INACTIVITY = 1;
@@ -260,8 +260,7 @@ static DEFINE_MUTEX(dfab_status_lock);
 static int dfab_is_on;
 static int wait_for_dfab;
 static struct completion dfab_unvote_completion;
-static DEFINE_SPINLOCK(wakelock_reference_lock);
-static int wakelock_reference_count;
+static atomic_t wakelock_reference_count = ATOMIC_INIT(0);
 static int a2_pc_disabled_wakelock_skipped;
 static int disconnect_ack = 1;
 static LIST_HEAD(bam_other_notify_funcs);
@@ -1607,7 +1606,7 @@ static void ul_timeout(struct work_struct *work)
 		return;
 	ret = write_trylock_irqsave(&ul_wakeup_lock, flags);
 	if (!ret) { /* failed to grab lock, reschedule and bail */
-		schedule_delayed_work(&ul_timeout_work,
+		queue_delayed_work(system_power_efficient_wq, &ul_timeout_work,
 				msecs_to_jiffies(UL_TIMEOUT_DELAY));
 		return;
 	}
@@ -1631,9 +1630,13 @@ static void ul_timeout(struct work_struct *work)
 			BAM_DMUX_LOG("%s: pkt written %d\n",
 				__func__, ul_packet_written);
 			ul_packet_written = 0;
-			schedule_delayed_work(&ul_timeout_work,
+			queue_delayed_work(system_power_efficient_wq, &ul_timeout_work,
 					msecs_to_jiffies(UL_TIMEOUT_DELAY));
-		} else {
+                } else if(polling_mode) {
+                        DMUX_LOG_KERR("%s: BAM is in polling mode, delay UL power down", __func__);
+                        schedule_delayed_work(&ul_timeout_work,
+                                       msecs_to_jiffies(UL_TIMEOUT_DELAY));
+                } else {
 			ul_powerdown();
 		}
 	}
@@ -1655,8 +1658,10 @@ static int ssrestart_check(void)
 								__func__);
 	in_global_reset = 1;
 	ret = subsystem_restart("modem");
-	if (ret == -ENODEV)
-		PR_BUG("modem subsystem restart failed\n");
+	if (ret == -ENODEV) {
+		DMUX_LOG_KERR("%s: modem subsystem restart failed\n", __func__);
+		BUG();
+	}
 	return 1;
 }
 
@@ -1717,7 +1722,7 @@ static void ul_wakeup(void)
 		}
 		if (likely(do_vote_dfab))
 			vote_dfab();
-		schedule_delayed_work(&ul_timeout_work,
+		queue_delayed_work(system_power_efficient_wq, &ul_timeout_work,
 				msecs_to_jiffies(UL_TIMEOUT_DELAY));
 		bam_is_connected = 1;
 		mutex_unlock(&wakeup_lock);
@@ -1762,7 +1767,7 @@ static void ul_wakeup(void)
 
 	bam_is_connected = 1;
 	BAM_DMUX_LOG("%s complete\n", __func__);
-	schedule_delayed_work(&ul_timeout_work,
+	queue_delayed_work(system_power_efficient_wq, &ul_timeout_work,
 				msecs_to_jiffies(UL_TIMEOUT_DELAY));
 	mutex_unlock(&wakeup_lock);
 }
@@ -1935,34 +1940,36 @@ static void unvote_dfab(void)
 /* reference counting wrapper around wakelock */
 static void grab_wakelock(void)
 {
-	unsigned long flags;
+	int wakelock_count = atomic_read(&wakelock_reference_count);
 
-	spin_lock_irqsave(&wakelock_reference_lock, flags);
 	BAM_DMUX_LOG("%s: ref count = %d\n", __func__,
-						wakelock_reference_count);
-	if (wakelock_reference_count == 0)
+						wakelock_count);
+
+	if (!wakelock_count)
 		wake_lock(&bam_wakelock);
-	++wakelock_reference_count;
-	spin_unlock_irqrestore(&wakelock_reference_lock, flags);
+
+	atomic_inc(&wakelock_reference_count);
 }
 
 static void release_wakelock(void)
 {
-	unsigned long flags;
+	int wakelock_count = atomic_read(&wakelock_reference_count);
 
-	spin_lock_irqsave(&wakelock_reference_lock, flags);
-	if (wakelock_reference_count == 0) {
+	if (!wakelock_count) 
+	{
 		DMUX_LOG_KERR("%s: bam_dmux wakelock not locked\n", __func__);
-		dump_stack();
-		spin_unlock_irqrestore(&wakelock_reference_lock, flags);
 		return;
 	}
+
 	BAM_DMUX_LOG("%s: ref count = %d\n", __func__,
-						wakelock_reference_count);
-	--wakelock_reference_count;
-	if (wakelock_reference_count == 0)
+						wakelock_count);
+
+	atomic_dec(&wakelock_reference_count);
+
+	wakelock_count = atomic_read(&wakelock_reference_count);
+
+	if (!wakelock_count)
 		wake_unlock(&bam_wakelock);
-	spin_unlock_irqrestore(&wakelock_reference_lock, flags);
 }
 
 static int restart_notifier_cb(struct notifier_block *this,
