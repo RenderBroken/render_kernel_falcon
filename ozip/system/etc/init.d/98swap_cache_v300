@@ -94,7 +94,7 @@ version_swap_cache="V3.00"
 partition="/cache";
 
 # the requested swap file size in MB
-swap_file_size_mb=250;
+swap_file_size_mb=150;
 
 # min. free memory; below that
 #  value of free memory, the
