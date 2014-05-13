@@ -49,9 +49,9 @@ echo 0 > /sys/kernel/power_suspend/power_suspend_mode
 chmod 664 /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
 chown -h system /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
 chown -h system /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
-chown -h root.system /sys/devices/system/cpu/cpu1/online
-chown -h root.system /sys/devices/system/cpu/cpu2/online
-chown -h root.system /sys/devices/system/cpu/cpu3/online
+chown -h system system /sys/devices/system/cpu/cpu1/online
+chown -h system system /sys/devices/system/cpu/cpu2/online
+chown -h system system /sys/devices/system/cpu/cpu3/online
 chmod -h 664 /sys/devices/system/cpu/cpu1/online
 chmod -h 664 /sys/devices/system/cpu/cpu2/online
 chmod -h 664 /sys/devices/system/cpu/cpu3/online
@@ -125,3 +125,30 @@ ln /dev/frandom /dev/random
 chmod 644 /dev/random
 ln /dev/erandom /dev/urandom
 chmod 644 /dev/urandom
+
+############################
+# CPUFreq and Governor Settings
+#
+echo intelliactive > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+echo intelliactive > /sys/devices/system/cpu/cpu1/cpufreq/scaling_governor
+echo intelliactive > /sys/devices/system/cpu/cpu2/cpufreq/scaling_governor
+echo intelliactive > /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor
+echo 20000 > /sys/devices/system/cpu/cpufreq/intelliactive/above_hispeed_delay
+echo  > /sys/devices/system/cpu/cpufreq/intelliactive/go_hispeed_load 90
+echo 1593600 > /sys/devices/system/cpu/cpufreq/intelliactive/hispeed_freq
+echo 1 > /sys/devices/system/cpu/cpufreq/intelliactive/io_is_busy
+echo 90 > /sys/devices/system/cpu/cpufreq/intelliactive/target_loads
+echo 40000 > /sys/devices/system/cpu/cpufreq/intelliactive/min_sample_time
+echo 20000 > /sys/devices/system/cpu/cpufreq/intelliactive/timer_rate
+echo 100000 > /sys/devices/system/cpu/cpufreq/intelliactive/sampling_down_factor
+echo 50000 > /sys/devices/system/cpu/cpufreq/intelliactive/timer_slack
+echo 95 > /sys/devices/system/cpu/cpufreq/intelliactive/up_threshold_any_cpu_load
+echo 787200 > /sys/devices/system/cpu/cpufreq/intelliactive/sync_freq
+echo 998400 > /sys/devices/system/cpu/cpufreq/intelliactive/up_threshold_any_cpu_freq
+echo 500 > /sys/module/msm_hotplug/down_lock_duration
+echo 2500 > /sys/module/msm_hotplug/boost_lock_duration
+echo 192000 > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
+echo 192000 > /sys/devices/system/cpu/cpu1/cpufreq/scaling_min_freq
+echo 192000 > /sys/devices/system/cpu/cpu2/cpufreq/scaling_min_freq
+echo 192000 > /sys/devices/system/cpu/cpu3/cpufreq/scaling_min_freq
+echo 1 > /dev/cpuctl/apps/cpu.notify_on_migrate
