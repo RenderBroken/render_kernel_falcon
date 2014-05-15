@@ -59,20 +59,10 @@ chmod -h 664 /sys/devices/system/cpu/cpu3/online
 ############################
 # CPU-Boost Settings
 #
-echo 20 > /sys/module/cpu_boost/parameters/boost_ms
-echo 1094400 > /sys/module/cpu_boost/parameters/sync_threshold
-echo 787200 > /sys/module/cpu_boost/parameters/input_boost_freq
-echo 40 > /sys/module/cpu_boost/parameters/input_boost_ms
-
-############################
-# Showp's MPDEC activate
-#
-#echo 1 > /sys/kernel/msm_mpdecision/conf/enabled
-
-############################
-# Disable Faux's Intelliplug
-#
-#echo 0 > /sys/module/intelli_plug_parameters/intelli_plug_active
+# echo 20 > /sys/module/cpu_boost/parameters/boost_ms
+# echo 600000 > /sys/module/cpu_boost/parameters/sync_threshold
+# echo 787200 > /sys/module/cpu_boost/parameters/input_boost_freq
+# echo 40 > /sys/module/cpu_boost/parameters/input_boost_ms
 
 ############################
 # mount debugfs
@@ -98,14 +88,14 @@ echo 25 > /sys/kernel/mm/uksm/max_cpu_percentage
 ############################
 # Tweak ZSWAP
 #
-echo 70 > /proc/sys/vm/swappiness
+# echo 70 > /proc/sys/vm/swappiness
 
 ############################
 # Init VNSWAP
 #
-echo 402653184 > /sys/block/vnswap0/disksize
-mkswap /dev/block/vnswap0
-swapon /dev/block/vnswap0
+# echo 402653184 > /sys/block/vnswap0/disksize
+# mkswap /dev/block/vnswap0
+# swapon /dev/block/vnswap0
 
 ############################
 # render tweaks
@@ -129,22 +119,37 @@ chmod 644 /dev/urandom
 ############################
 # CPUFreq and Governor Settings
 #
-echo intelliactive > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
-echo intelliactive > /sys/devices/system/cpu/cpu1/cpufreq/scaling_governor
-echo intelliactive > /sys/devices/system/cpu/cpu2/cpufreq/scaling_governor
-echo intelliactive > /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor
-echo 20000 > /sys/devices/system/cpu/cpufreq/intelliactive/above_hispeed_delay
-echo  > /sys/devices/system/cpu/cpufreq/intelliactive/go_hispeed_load 90
-echo 1593600 > /sys/devices/system/cpu/cpufreq/intelliactive/hispeed_freq
-echo 1 > /sys/devices/system/cpu/cpufreq/intelliactive/io_is_busy
-echo 90 > /sys/devices/system/cpu/cpufreq/intelliactive/target_loads
-echo 40000 > /sys/devices/system/cpu/cpufreq/intelliactive/min_sample_time
-echo 20000 > /sys/devices/system/cpu/cpufreq/intelliactive/timer_rate
-echo 100000 > /sys/devices/system/cpu/cpufreq/intelliactive/sampling_down_factor
-echo 50000 > /sys/devices/system/cpu/cpufreq/intelliactive/timer_slack
-echo 95 > /sys/devices/system/cpu/cpufreq/intelliactive/up_threshold_any_cpu_load
-echo 787200 > /sys/devices/system/cpu/cpufreq/intelliactive/sync_freq
-echo 998400 > /sys/devices/system/cpu/cpufreq/intelliactive/up_threshold_any_cpu_freq
+#echo interactive > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+#echo interactive > /sys/devices/system/cpu/cpu1/cpufreq/scaling_governor
+#echo interactive > /sys/devices/system/cpu/cpu2/cpufreq/scaling_governor
+#echo interactive > /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor
+#echo "20000 700000:40000 1100000:20000" > /sys/devices/system/cpu/cpufreq/interactive/above_hispeed_delay
+#echo 90 > /sys/devices/system/cpu/cpufreq/interactive/go_hispeed_load
+#echo 1190400 > /sys/devices/system/cpu/cpufreq/interactive/hispeed_freq
+#echo 85 > /sys/devices/system/cpu/cpufreq/interactive/target_loads
+#echo 40000 > /sys/devices/system/cpu/cpufreq/interactive/min_sample_time
+#echo 100000 > /sys/devices/system/cpu/cpufreq/interactive/sampling_down_factor
+#echo 787200 > /sys/devices/system/cpu/cpufreq/interactive/up_threshold_any_cpu_freq
+#echo 60 > /sys/devices/system/cpu/cpufreq/interactive/up_threshold_any_cpu_load
+#echo 600000 > /sys/devices/system/cpu/cpufreq/interactive/sync_freq
+echo intellidemand > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+echo intellidemand > /sys/devices/system/cpu/cpu1/cpufreq/scaling_governor
+echo intellidemand > /sys/devices/system/cpu/cpu2/cpufreq/scaling_governor
+echo intellidemand > /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor
+#echo 1 > /sys/devices/system/cpu/cpufreq/intellidemand/enable_boost_cpu
+#echo 600000, 600000, 600000, 600000 > /sys/devices/system/cpu/cpufreq/intellidemand/input_event_min_freq
+#echo 20000 > /sys/devices/system/cpu/cpufreq/intellidemand/above_hispeed_delay
+#echo 90 > /sys/devices/system/cpu/cpufreq/intellidemand/go_hispeed_load
+#echo 1593600 > /sys/devices/system/cpu/cpufreq/intellidemand/hispeed_freq
+#echo 1 > /sys/devices/system/cpu/cpufreq/intellidemand/io_is_busy
+#echo 90 > /sys/devices/system/cpu/cpufreq/intellidemand/target_loads
+#echo 40000 > /sys/devices/system/cpu/cpufreq/intellidemand/min_sample_time
+#echo 20000 > /sys/devices/system/cpu/cpufreq/intellidemand/timer_rate
+#echo 100000 > /sys/devices/system/cpu/cpufreq/intellidemand/sampling_down_factor
+#echo 50000 > /sys/devices/system/cpu/cpufreq/intellidemand/timer_slack
+#echo 95 > /sys/devices/system/cpu/cpufreq/intellidemand/up_threshold_any_cpu_load
+#echo 787200 > /sys/devices/system/cpu/cpufreq/intellidemand/sync_freq
+#echo 998400 > /sys/devices/system/cpu/cpufreq/intellidemand/up_threshold_any_cpu_freq
 echo 500 > /sys/module/msm_hotplug/down_lock_duration
 echo 2500 > /sys/module/msm_hotplug/boost_lock_duration
 echo 192000 > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
