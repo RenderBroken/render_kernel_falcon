@@ -20,6 +20,7 @@
 #include <linux/device.h>
 #include <linux/slab.h>
 #include <linux/cpufreq.h>
+#include <linux/fb.h>
 #include <linux/input.h>
 #include <linux/math64.h>
 #include <linux/kernel_stat.h>
@@ -244,14 +245,7 @@ static void update_load_stats(void)
 
 	mutex_lock(&stats.stats_mutex);
 	stats.online_cpus = num_online_cpus();
-
-	if (stats.hist_size > 1) {
-		stats.load_hist[stats.hist_cnt] = load_at_max_freq();
-	} else {
-		stats.cur_avg_load = load_at_max_freq();
-		mutex_unlock(&stats.stats_mutex);
-		return;
-	}
+	stats.load_hist[stats.hist_cnt] = load_at_max_freq();
 
 	for (i = 0, j = stats.hist_cnt; i < stats.hist_size; i++, j--) {
 		load += stats.load_hist[j];
@@ -468,6 +462,15 @@ static void msm_hotplug_resume_work(struct work_struct *work)
 	online_cpu(stats.total_cpus);
 }
 
+static int fb_notifier_callback(struct notifier_block *nb,
+                                 unsigned long event, void *data)
+{
+        if (event == FB_BLANK_UNBLANK)
+		schedule_work(&hotplug.resume_work);
+
+        return 0;
+}
+
 static void hotplug_input_event(struct input_handle *handle, unsigned int type,
 				unsigned int code, int value)
 {
@@ -500,7 +503,7 @@ static int hotplug_input_connect(struct input_handler *handler,
 
 	handle->dev = dev;
 	handle->handler = handler;
-	handle->name = handler->name;
+	handle->name = "msm-hotplug";
 
 	err = input_register_handle(handle);
 	if (err)
@@ -696,24 +699,18 @@ static ssize_t store_history_size(struct device *dev,
 	unsigned int val;
 
 	ret = sscanf(buf, "%u", &val);
-	if (ret != 1 || val <= 0)
+	if (ret != 1 || val == 0)
 		return -EINVAL;
 
 	flush_workqueue(hotplug_wq);
 	cancel_delayed_work_sync(&hotplug_work);
 
-	mutex_lock(&stats.stats_mutex);
-	if (stats.hist_size > 1)
-		kfree(stats.load_hist);
-
+	kfree(stats.load_hist);
 	stats.hist_size = val;
 
-	if (stats.hist_size > 1) {
-		stats.load_hist = kmalloc(sizeof(stats.hist_size), GFP_KERNEL);
-		if (!stats.load_hist)
-			return -ENOMEM;
-	}
-	mutex_unlock(&stats.stats_mutex);
+	stats.load_hist = kmalloc(sizeof(stats.hist_size), GFP_KERNEL);
+	if (!stats.load_hist)
+		return -ENOMEM;
 
 	reschedule_hotplug_work();
 
@@ -735,7 +732,7 @@ static ssize_t store_min_cpus_online(struct device *dev,
 	unsigned int val;
 
 	ret = sscanf(buf, "%u", &val);
-	if (ret != 1 || val <= 0)
+	if (ret != 1 || val == 0)
 		return -EINVAL;
 
 	if (hotplug.max_cpus_online < val)
@@ -761,7 +758,7 @@ static ssize_t store_max_cpus_online(struct device *dev,
 	unsigned int val;
 
 	ret = sscanf(buf, "%u", &val);
-	if (ret != 1 || val <= 1)
+	if (ret != 1 || val == 0)
 		return -EINVAL;
 
 	if (hotplug.min_cpus_online > val)
@@ -787,7 +784,7 @@ static ssize_t store_cpus_boosted(struct device *dev,
 	unsigned int val;
 
 	ret = sscanf(buf, "%u", &val);
-	if (ret != 1 || val <= 1)
+	if (ret != 1 || val == 0)
 		return -EINVAL;
 
 	hotplug.cpus_boosted = val;
@@ -819,15 +816,15 @@ static ssize_t store_offline_load(struct device *dev,
 }
 
 static ssize_t show_fast_lane_load(struct device *dev,
-				   struct device_attribute *msm_hotplug_attrs,
-				   char *buf)
+				 struct device_attribute *msm_hotplug_attrs,
+				 char *buf)
 {
 	return sprintf(buf, "%u\n", hotplug.fast_lane_load);
 }
 
 static ssize_t store_fast_lane_load(struct device *dev,
-				    struct device_attribute *msm_hotplug_attrs,
-				    const char *buf, size_t count)
+				  struct device_attribute *msm_hotplug_attrs,
+				  const char *buf, size_t count)
 {
 	int ret;
 	unsigned int val;
@@ -912,6 +909,13 @@ static int __devinit msm_hotplug_probe(struct platform_device *pdev)
 	ret = sysfs_create_group(module_kobj, &attr_group);
 	if (ret) {
 		pr_err("%s: Failed to create sysfs: %d\n", MSM_HOTPLUG, ret);
+		goto err_dev;
+	}
+
+	hotplug.notif.notifier_call = fb_notifier_callback;
+        if (fb_register_client(&hotplug.notif) != 0) {
+                pr_err("%s: Failed to register notifier callback\n",
+                       MSM_HOTPLUG);
 		goto err_dev;
 	}
 
