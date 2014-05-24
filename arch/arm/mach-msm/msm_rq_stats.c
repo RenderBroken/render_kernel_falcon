@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -38,7 +38,6 @@
 
 struct notifier_block freq_transition;
 struct notifier_block cpu_hotplug;
-struct notifier_block freq_policy;
 
 struct cpu_load_data {
 	cputime64_t prev_cpu_idle;
@@ -183,6 +182,9 @@ static int cpufreq_transition_handler(struct notifier_block *nb,
 	struct cpu_load_data *this_cpu = &per_cpu(cpuload, freqs->cpu);
 	int j;
 
+	if (rq_info.hotplug_disabled)
+		return 0;
+
 	switch (val) {
 	case CPUFREQ_POSTCHANGE:
 		for_each_cpu(j, this_cpu->related_cpus) {
@@ -203,10 +205,13 @@ static int cpu_hotplug_handler(struct notifier_block *nb,
 	unsigned int cpu = (unsigned long)data;
 	struct cpu_load_data *this_cpu = &per_cpu(cpuload, cpu);
 
+	if (rq_info.hotplug_disabled)
+		return NOTIFY_OK;
+
 	switch (val) {
 	case CPU_ONLINE:
 		if (!this_cpu->cur_freq)
-			this_cpu->cur_freq = cpufreq_quick_get(cpu) * 1000;
+			this_cpu->cur_freq = cpufreq_quick_get(cpu);
 	case CPU_ONLINE_FROZEN:
 		this_cpu->avg_load_maxfreq = 0;
 	}
@@ -217,6 +222,9 @@ static int cpu_hotplug_handler(struct notifier_block *nb,
 static int system_suspend_handler(struct notifier_block *nb,
 				unsigned long val, void *data)
 {
+	if (rq_info.hotplug_disabled)
+		return NOTIFY_OK;
+
 	switch (val) {
 	case PM_POST_HIBERNATION:
 	case PM_POST_SUSPEND:
@@ -233,53 +241,41 @@ static int system_suspend_handler(struct notifier_block *nb,
 	return NOTIFY_OK;
 }
 
-static int freq_policy_handler(struct notifier_block *nb,
-			unsigned long event, void *data)
+static ssize_t store_hotplug_disable(struct kobject *kobj,
+				     struct kobj_attribute *attr,
+				     const char *buf, size_t count)
 {
-	struct cpufreq_policy *policy = data;
-	struct cpu_load_data *this_cpu = &per_cpu(cpuload, policy->cpu);
-
-	if (event != CPUFREQ_NOTIFY)
-		goto out;
-
-	this_cpu->policy_max = policy->max;
-
-	pr_debug("Policy max changed from %u to %u, event %lu\n",
-			this_cpu->policy_max, policy->max, event);
-out:
-	return NOTIFY_DONE;
-}
-
-static ssize_t hotplug_disable_show(struct kobject *kobj,
-		struct kobj_attribute *attr, char *buf)
-{
-	unsigned int val = 0;
-	val = rq_info.hotplug_disabled;
-	return snprintf(buf, MAX_LONG_SIZE, "%d\n", val);
-}
-
-static struct kobj_attribute hotplug_disabled_attr = __ATTR_RO(hotplug_disable);
-#ifdef CONFIG_MSM_MPDEC
-unsigned int get_rq_info(void)
-{
+	int ret;
+	unsigned int val;
 	unsigned long flags = 0;
-        unsigned int rq = 0;
 
-        spin_lock_irqsave(&rq_lock, flags);
+	spin_lock_irqsave(&rq_lock, flags);
+	ret = sscanf(buf, "%u", &val);
+	if (ret != 1 || val < 0 || val > 1)
+		return -EINVAL;
 
-        rq = rq_info.rq_avg;
-        rq_info.rq_avg = 0;
+	rq_info.hotplug_disabled = val;
+	spin_unlock_irqrestore(&rq_lock, flags);
 
-        spin_unlock_irqrestore(&rq_lock, flags);
-
-        return rq;
+	return count;
 }
-EXPORT_SYMBOL(get_rq_info);
-#endif
+
+static ssize_t show_hotplug_disable(struct kobject *kobj,
+				    struct kobj_attribute *attr, char *buf)
+{
+	return snprintf(buf, MAX_LONG_SIZE, "%d\n", rq_info.hotplug_disabled);
+}
+
+static struct kobj_attribute hotplug_disabled_attr =
+	__ATTR(hotplug_disable, S_IWUSR | S_IRUSR, show_hotplug_disable,
+	       store_hotplug_disable);
 
 static void def_work_fn(struct work_struct *work)
 {
 	int64_t diff;
+
+	if (rq_info.hotplug_disabled)
+		return;
 
 	diff = ktime_to_ns(ktime_get()) - rq_info.def_start_time;
 	do_div(diff, 1000 * 1000);
@@ -369,7 +365,8 @@ static struct kobj_attribute def_timer_ms_attr =
 static ssize_t show_cpu_normalized_load(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
-	return snprintf(buf, MAX_LONG_SIZE, "%u\n", report_load_at_max_freq());
+	return snprintf(buf, MAX_LONG_SIZE, "%u\n",
+		rq_info.hotplug_disabled ? 0 : report_load_at_max_freq());
 }
 
 static struct kobj_attribute cpu_normalized_load_attr =
@@ -416,11 +413,12 @@ static int __init msm_rq_stats_init(void)
 	int ret;
 	int i;
 	struct cpufreq_policy cpu_policy;
+
+#ifndef CONFIG_SMP
 	/* Bail out if this is not an SMP Target */
-	if (!is_smp()) {
-		rq_info.init = 0;
-		return -ENOSYS;
-	}
+	rq_info.init = 0;
+	return -ENOSYS;
+#endif
 
 	rq_wq = create_singlethread_workqueue("rq_stats");
 	BUG_ON(!rq_wq);
@@ -430,7 +428,7 @@ static int __init msm_rq_stats_init(void)
 	rq_info.def_timer_jiffies = DEFAULT_DEF_TIMER_JIFFIES;
 	rq_info.rq_poll_last_jiffy = 0;
 	rq_info.def_timer_last_jiffy = 0;
-	rq_info.hotplug_disabled = 0;
+	rq_info.hotplug_disabled = 1;
 	ret = init_rq_attribs();
 
 	rq_info.init = 1;
@@ -439,19 +437,16 @@ static int __init msm_rq_stats_init(void)
 		struct cpu_load_data *pcpu = &per_cpu(cpuload, i);
 		mutex_init(&pcpu->cpu_load_mutex);
 		cpufreq_get_policy(&cpu_policy, i);
-		pcpu->policy_max = cpu_policy.cpuinfo.max_freq;
+		pcpu->policy_max = cpu_policy.max;
 		if (cpu_online(i))
-			pcpu->cur_freq = cpufreq_quick_get(i) * 1000;
+			pcpu->cur_freq = cpu_policy.cur;
 		cpumask_copy(pcpu->related_cpus, cpu_policy.cpus);
 	}
 	freq_transition.notifier_call = cpufreq_transition_handler;
 	cpu_hotplug.notifier_call = cpu_hotplug_handler;
-	freq_policy.notifier_call = freq_policy_handler;
 	cpufreq_register_notifier(&freq_transition,
 					CPUFREQ_TRANSITION_NOTIFIER);
 	register_hotcpu_notifier(&cpu_hotplug);
-	cpufreq_register_notifier(&freq_policy,
-					CPUFREQ_POLICY_NOTIFIER);
 
 	return ret;
 }
@@ -459,11 +454,11 @@ late_initcall(msm_rq_stats_init);
 
 static int __init msm_rq_stats_early_init(void)
 {
+#ifndef CONFIG_SMP
 	/* Bail out if this is not an SMP Target */
-	if (!is_smp()) {
-		rq_info.init = 0;
-		return -ENOSYS;
-	}
+	rq_info.init = 0;
+	return -ENOSYS;
+#endif
 
 	pm_notifier(system_suspend_handler, 0);
 	return 0;
