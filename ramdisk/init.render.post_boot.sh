@@ -72,6 +72,7 @@ echo 1 > /sys/module/msm_pm/modes/cpu3/retention/idle_enabled
 # echo 600000 > /sys/module/cpu_boost/parameters/sync_threshold
 # echo 787200 > /sys/module/cpu_boost/parameters/input_boost_freq
 # echo 40 > /sys/module/cpu_boost/parameters/input_boost_ms
+echo 787200 > /sys/module/cpu_boost/parameters/plug_boost_freq
 
 ############################
 # mount debugfs
