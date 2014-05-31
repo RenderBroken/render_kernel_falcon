@@ -45,8 +45,8 @@
 #define DEFAULT_NR_CPUS_BOOSTED	2
 #define DEFAULT_MIN_CPUS_ONLINE	1
 #define DEFAULT_MAX_CPUS_ONLINE	NR_CPUS
-#define DEFAULT_FAST_LANE_LOAD	120
-#define DEFAULT_SUSPEND_DEFER_TIME	5
+#define DEFAULT_FAST_LANE_LOAD	95
+#define DEFAULT_SUSPEND_DEFER_TIME	10
 
 static unsigned int debug = 0;
 module_param_named(debug_mask, debug, uint, 0644);
@@ -504,9 +504,7 @@ reschedule:
 	reschedule_hotplug_work();
 }
 
-#if defined(CONFIG_LCD_NOTIFY) || \
-	defined(CONFIG_POWERSUSPEND) || \
-	defined(CONFIG_HAS_EARLYSUSPEND)
+#if defined(CONFIG_LCD_NOTIFY) || defined(CONFIG_POWERSUSPEND) || defined(CONFIG_HAS_EARLYSUSPEND)
 static void msm_hotplug_suspend(struct work_struct *work)
 {
 	int ret;
@@ -643,7 +641,8 @@ static int lcd_notifier_callback(struct notifier_block *nb,
 
 	return NOTIFY_OK;
 }
-#elif defined(CONFIG_POWERSUSPEND)
+#elif defined(CONFIG_POWERSUSPEND) || defined(CONFIG_HAS_EARLYSUSPEND)
+#ifdef CONFIG_POWERSUSPEND
 static struct power_suspend msm_hotplug_power_suspend_driver = {
 #else
 static struct early_suspend msm_hotplug_early_suspend_driver = {
@@ -653,15 +652,14 @@ static struct early_suspend msm_hotplug_early_suspend_driver = {
 	.resume = __msm_hotplug_resume,
 };
 #endif
+#endif
 
 static void hotplug_input_event(struct input_handle *handle, unsigned int type,
 				unsigned int code, int value)
 {
 	u64 now;
 
-#if defined(CONFIG_LCD_NOTIFY) || \
-	defined(CONFIG_POWERSUSPEND) || \
-	defined(CONFIG_HAS_EARLYSUSPEND)
+#if defined(CONFIG_LCD_NOTIFY) || defined(CONFIG_POWERSUSPEND) || defined(CONFIG_HAS_EARLYSUSPEND)
 	if (hotplug.suspended) {
 		dprintk("%s: suspended.\n", MSM_HOTPLUG);
 		return;
@@ -775,7 +773,6 @@ static int __ref msm_hotplug_start(void)
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
 	register_early_suspend(&msm_hotplug_early_suspend_driver);
 #endif
-
 	ret = input_register_handler(&hotplug_input_handler);
 	if (ret) {
 		pr_err("%s: Failed to register input handler: %d\n",
@@ -798,9 +795,7 @@ static int __ref msm_hotplug_start(void)
 	INIT_DELAYED_WORK(&hotplug_work, msm_hotplug_work);
 	INIT_WORK(&hotplug.up_work, cpu_up_work);
 	INIT_WORK(&hotplug.down_work, cpu_down_work);
-#if defined(CONFIG_LCD_NOTIFY) || \
-	defined(CONFIG_POWERSUSPEND) || \
-	defined(CONFIG_HAS_EARLYSUSPEND)
+#if defined(CONFIG_LCD_NOTIFY) || defined(CONFIG_POWERSUSPEND) || defined(CONFIG_HAS_EARLYSUSPEND)
 	INIT_DELAYED_WORK(&hotplug.suspend_work, msm_hotplug_suspend);
 	INIT_WORK(&hotplug.resume_work, msm_hotplug_resume);
 #endif
@@ -842,9 +837,7 @@ static void msm_hotplug_stop(void)
 		dl = &per_cpu(lock_info, cpu);
 		cancel_delayed_work_sync(&dl->lock_rem);
 	}
-#if defined(CONFIG_LCD_NOTIFY) || \
-	defined(CONFIG_POWERSUSPEND) || \
-	defined(CONFIG_HAS_EARLYSUSPEND)
+#if defined(CONFIG_LCD_NOTIFY) || defined(CONFIG_POWERSUSPEND) || defined(CONFIG_HAS_EARLYSUSPEND)
 	cancel_work_sync(&hotplug.resume_work);
 	cancel_delayed_work_sync(&hotplug.suspend_work);
 #endif
@@ -1165,9 +1158,7 @@ static ssize_t store_max_cpus_online(struct device *dev,
 	return count;
 }
 
-#if defined(CONFIG_LCD_NOTIFY) || \
-	defined(CONFIG_POWERSUSPEND) || \
-	defined(CONFIG_HAS_EARLYSUSPEND)
+#if defined(CONFIG_LCD_NOTIFY) || defined(CONFIG_POWERSUSPEND) || defined(CONFIG_HAS_EARLYSUSPEND)
 static ssize_t show_suspend_max_freq(struct device *dev,
 				     struct device_attribute *msm_hotplug_attrs,
 				     char *buf)
@@ -1335,9 +1326,7 @@ static DEVICE_ATTR(min_cpus_online, 644, show_min_cpus_online,
 		   store_min_cpus_online);
 static DEVICE_ATTR(max_cpus_online, 644, show_max_cpus_online,
 		   store_max_cpus_online);
-#if defined(CONFIG_LCD_NOTIFY) || \
-	defined(CONFIG_POWERSUSPEND) || \
-	defined(CONFIG_HAS_EARLYSUSPEND)
+#if defined(CONFIG_LCD_NOTIFY) || defined(CONFIG_POWERSUSPEND) || defined(CONFIG_HAS_EARLYSUSPEND)
 static DEVICE_ATTR(suspend_max_freq, 644, show_suspend_max_freq,
 		   store_suspend_max_freq);
 static DEVICE_ATTR(suspend_max_cpus, 644, show_suspend_max_cpus,
@@ -1360,9 +1349,7 @@ static struct attribute *msm_hotplug_attrs[] = {
 	&dev_attr_history_size.attr,
 	&dev_attr_min_cpus_online.attr,
 	&dev_attr_max_cpus_online.attr,
-#if defined(CONFIG_LCD_NOTIFY) || \
-	defined(CONFIG_POWERSUSPEND) || \
-	defined(CONFIG_HAS_EARLYSUSPEND)
+#if defined(CONFIG_LCD_NOTIFY) || defined(CONFIG_POWERSUSPEND) || defined(CONFIG_HAS_EARLYSUSPEND)
 	&dev_attr_suspend_max_freq.attr,
 	&dev_attr_suspend_max_cpus.attr,
 	&dev_attr_suspend_defer_time.attr,
