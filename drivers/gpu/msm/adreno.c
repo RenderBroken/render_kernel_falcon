@@ -251,7 +251,7 @@ static void adreno_input_work(struct work_struct *work)
 	 */
 	mod_timer(&device->idle_timer,
 		jiffies + msecs_to_jiffies(_wake_timeout));
-	kgsl_mutex_unlock(&device->mutex, &device->mutex_owner);
+	mutex_unlock(&device->mutex);
 }
 
 /*
@@ -2054,7 +2054,7 @@ static void adreno_start_work(struct work_struct *work)
 	/* Nice ourselves to be higher priority but not too high priority */
 	set_user_nice(current, _wake_nice);
 
-	kgsl_mutex_lock(&device->mutex, &device->mutex_owner);
+	mutex_lock(&device->mutex);
 	/*
 	 *  If adreno start is already called, no need to call it again
 	 *  it can lead to unpredictable behavior if we try to start
@@ -2074,7 +2074,7 @@ static void adreno_start_work(struct work_struct *work)
 		_status = _adreno_start(adreno_dev);
 	else
 		_status = 0;
-	kgsl_mutex_unlock(&device->mutex, &device->mutex_owner);
+	mutex_unlock(&device->mutex);
 }
 
 /**
@@ -2099,9 +2099,9 @@ static int adreno_start(struct kgsl_device *device, int priority)
 	 * higher priority work queue and wait for it to finish
 	 */
 	queue_work(adreno_wq, &adreno_dev->start_work);
-	kgsl_mutex_unlock(&device->mutex, &device->mutex_owner);
+	mutex_unlock(&device->mutex);
 	flush_work(&adreno_dev->start_work);
-	kgsl_mutex_lock(&device->mutex, &device->mutex_owner);
+	mutex_lock(&device->mutex);
 
 	return _status;
 }
