@@ -50,10 +50,10 @@ static struct work_struct plug_boost_work;
 static unsigned int boost_ms = 20;
 module_param(boost_ms, uint, 0644);
 
-static unsigned int sync_threshold = 384000;
+static unsigned int sync_threshold = 787200;
 module_param(sync_threshold, uint, 0644);
 
-static unsigned int input_boost_freq = 787200;
+static unsigned int input_boost_freq = 600000;
 module_param(input_boost_freq, uint, 0644);
 
 static unsigned int input_boost_ms = 40;
