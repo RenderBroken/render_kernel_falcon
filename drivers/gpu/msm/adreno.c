@@ -234,7 +234,7 @@ static void adreno_input_work(struct work_struct *work)
 	if (!_wake_timeout)
 		return;
 
-	kgsl_mutex_lock(&device->mutex, &device->mutex_owner);
+	mutex_lock(&device->mutex);
 
 	device->flags |= KGSL_FLAG_WAKE_ON_TOUCH;
 
