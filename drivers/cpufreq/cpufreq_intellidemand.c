@@ -52,7 +52,6 @@
 #define MIN_FREQUENCY_UP_THRESHOLD		(11)
 #define MAX_FREQUENCY_UP_THRESHOLD		(100)
 #define MIN_FREQUENCY_DOWN_DIFFERENTIAL		(1)
-#define DBS_INPUT_EVENT_MIN_FREQ		(600000)
 #define DEF_UI_DYNAMIC_SAMPLING_RATE		(30000)
 #define DBS_UI_SAMPLING_MIN_TIMEOUT		(30)
 #define DBS_UI_SAMPLING_MAX_TIMEOUT		(1000)
@@ -193,9 +192,6 @@ static inline void dbs_timer_exit(struct cpu_dbs_info_s *dbs_info);
 static unsigned int dbs_enable;	/* number of CPUs using this policy */
 
 static DEFINE_PER_CPU(struct task_struct *, up_task);
-static spinlock_t input_boost_lock;
-static bool input_event_boost = false;
-static unsigned long ui_sampling_expired = 0;
 
 /*
  * dbs_mutex protects dbs_enable and dbs_info during start/stop.
@@ -595,43 +591,6 @@ static ssize_t store_two_phase_freq(struct kobject *a, struct attribute *b,
 				&two_phase_freq_array[1],
 				&two_phase_freq_array[2],
 				&two_phase_freq_array[3]);
-	if (ret < NR_CPUS)
-		return -EINVAL;
-
-	return count;
-}
-
-static int input_event_min_freq_array[NR_CPUS] = {[0 ... NR_CPUS-1] = DBS_INPUT_EVENT_MIN_FREQ} ;
-
-static ssize_t show_input_event_min_freq
-(struct kobject *kobj, struct attribute *attr, char *buf)
-{
-	int i = 0 ;
-	int shift = 0 ;
-	char *buf_pos = buf;
-	for ( i = 0 ; i < NR_CPUS; i++) {
-		shift = sprintf(buf_pos,"%d,",input_event_min_freq_array[i]);
-		buf_pos += shift;
-	}
-	*(buf_pos-1) = '\0';
-	return strlen(buf);
-}
-
-static ssize_t store_input_event_min_freq(struct kobject *a, struct attribute *b,
-		const char *buf, size_t count)
-{
-
-	int ret = 0;
-	if (NR_CPUS == 1)
-		ret = sscanf(buf,"%u",&input_event_min_freq_array[0]);
-	else if (NR_CPUS == 2)
-		ret = sscanf(buf,"%u,%u",&input_event_min_freq_array[0],
-				&input_event_min_freq_array[1]);
-	else if (NR_CPUS == 4)
-		ret = sscanf(buf, "%u,%u,%u,%u", &input_event_min_freq_array[0],
-				&input_event_min_freq_array[1],
-				&input_event_min_freq_array[2],
-				&input_event_min_freq_array[3]);
 	if (ret < NR_CPUS)
 		return -EINVAL;
 
@@ -1237,7 +1196,6 @@ define_one_global_rw(step_up_interim_hispeed);
 define_one_global_rw(sampling_early_factor);
 define_one_global_rw(sampling_interim_factor);
 define_one_global_rw(two_phase_freq);
-define_one_global_rw(input_event_min_freq);
 define_one_global_rw(ui_sampling_rate);
 define_one_global_rw(ui_timeout);
 define_one_global_rw(enable_boost_cpu);
@@ -1270,7 +1228,6 @@ static struct attribute *dbs_attributes[] = {
 	&sampling_early_factor.attr,
 	&sampling_interim_factor.attr,
 	&two_phase_freq.attr,
-	&input_event_min_freq.attr,
 	&ui_sampling_rate.attr,
 	&ui_timeout.attr,
 	&enable_boost_cpu.attr,
@@ -1306,25 +1263,6 @@ int set_two_phase_freq(int cpufreq)
 
 void set_two_phase_freq_by_cpu ( int cpu_nr, int cpufreq){
 	two_phase_freq_array[cpu_nr-1] = cpufreq;
-}
-
-int input_event_boosted(void)
-{
-	unsigned long flags;
-
-
-	spin_lock_irqsave(&input_boost_lock, flags);
-	if (input_event_boost) {
-		if (time_before(jiffies, ui_sampling_expired)) {
-			spin_unlock_irqrestore(&input_boost_lock, flags);
-			return 1;
-		}
-		input_event_boost = false;
-		dbs_tuners_ins.sampling_rate = dbs_tuners_ins.origin_sampling_rate;
-	}
-	spin_unlock_irqrestore(&input_boost_lock, flags);
-
-	return 0;
 }
 
 static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
@@ -1691,10 +1629,6 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		}
 	}
 
-	if (input_event_boosted()) {
-		return;
-	}
-
 	/* Check for frequency decrease */
 	/* if we cannot reduce the frequency anymore, break out early */
 	if (policy->cur == policy->min)
@@ -1818,9 +1752,6 @@ static void do_dbs_timer(struct work_struct *work)
 				delay -= jiffies % delay;
 		}
 	} else {
-		if (input_event_boosted())
-			goto sched_wait;
-
 		__cpufreq_driver_target(dbs_info->cur_policy,
 			dbs_info->freq_lo, CPUFREQ_RELATION_H);
 		delay = dbs_info->freq_lo_jiffies;
@@ -2018,116 +1949,6 @@ bail_acq_sema_failed:
 	return 0;
 }
 
-static void dbs_input_event(struct input_handle *handle, unsigned int type,
-		unsigned int code, int value)
-{
-	int i;
-	struct cpu_dbs_info_s *dbs_info;
-	unsigned long flags;
-	int input_event_min_freq;
-
-	if ((dbs_tuners_ins.powersave_bias == POWERSAVE_BIAS_MAXLEVEL) ||
-		(dbs_tuners_ins.powersave_bias == POWERSAVE_BIAS_MINLEVEL)) {
-		/* nothing to do */
-		return;
-	}
-
-	if (type == EV_SYN && code == SYN_REPORT) {
-		spin_lock_irqsave(&input_boost_lock, flags);
-		input_event_boost = true;
-		ui_sampling_expired = jiffies + msecs_to_jiffies(dbs_tuners_ins.ui_timeout);
-		spin_unlock_irqrestore(&input_boost_lock, flags);
-
-		input_event_min_freq = input_event_min_freq_array[num_online_cpus() - 1];
-		for_each_online_cpu(i) {
-			dbs_info = &per_cpu(od_cpu_dbs_info, i);
-			if (dbs_info->cur_policy &&
-				dbs_info->cur_policy->cur < input_event_min_freq) {
-				wake_up_process(per_cpu(up_task, i));
-			}
-		}
-	}
-}
-
-static int input_dev_filter(const char *input_dev_name)
-{
-	if (strstr(input_dev_name, "touchscreen") ||
- 	    strstr(input_dev_name, "synaptics_dsx_i2c") ||
- 	    strstr(input_dev_name, "touch_dev") ||
- 	    strstr(input_dev_name, "sec-touchscreen") ||
-	    strstr(input_dev_name, "keypad")) {
-		return 0;
-	} else {
-		return 1;
-	}
-}
-
-
-static int dbs_input_connect(struct input_handler *handler,
-		struct input_dev *dev, const struct input_device_id *id)
-{
-	struct input_handle *handle;
-	int error;
-
-	if (input_dev_filter(dev->name))
-		return -ENODEV;
-
-	handle = kzalloc(sizeof(struct input_handle), GFP_KERNEL);
-	if (!handle)
-		return -ENOMEM;
-
-	handle->dev = dev;
-	handle->handler = handler;
-	handle->name = "cpufreq";
-
-	error = input_register_handle(handle);
-	if (error)
-		goto err2;
-
-	error = input_open_device(handle);
-	if (error)
-		goto err1;
-
-	return 0;
-err1:
-	input_unregister_handle(handle);
-err2:
-	kfree(handle);
-	return error;
-}
-
-static void dbs_input_disconnect(struct input_handle *handle)
-{
-	input_close_device(handle);
-	input_unregister_handle(handle);
-	kfree(handle);
-}
-
-static const struct input_device_id dbs_ids[] = {
-	{ .driver_info = 1 },
-	{ },
-};
-
-static struct input_handler dbs_input_handler = {
-	.event		= dbs_input_event,
-	.connect	= dbs_input_connect,
-	.disconnect	= dbs_input_disconnect,
-	.name		= "cpufreq_ond",
-	.id_table	= dbs_ids,
-};
-
-int set_input_event_min_freq(int cpufreq)
-{
-	int i  = 0;
-	for ( i = 0 ; i < NR_CPUS; i++)
-		input_event_min_freq_array[i] = cpufreq;
-	return 0;
-}
-
-void set_input_event_min_freq_by_cpu ( int cpu_nr, int cpufreq){
-	input_event_min_freq_array[cpu_nr-1] = cpufreq;
-}
-
 static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 				   unsigned int event)
 {
@@ -2203,8 +2024,6 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			atomic_notifier_chain_register(&migration_notifier_head,
 					&dbs_migration_nb);
 		}
-		if (!cpu)
-			rc = input_register_handler(&dbs_input_handler);
 		mutex_unlock(&dbs_mutex);
 
 
@@ -2230,8 +2049,6 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		/* If device is being removed, policy is no longer
 		 * valid. */
 		this_dbs_info->cur_policy = NULL;
-		if (!cpu)
-			input_unregister_handler(&dbs_input_handler);
 		if (!dbs_enable) {
 			sysfs_remove_group(cpufreq_global_kobject,
 					   &dbs_attr_group);
@@ -2272,7 +2089,6 @@ static int cpufreq_gov_dbs_up_task(void *data)
 	struct cpufreq_policy *policy;
 	struct cpu_dbs_info_s *this_dbs_info;
 	unsigned int cpu = smp_processor_id();
-	int input_event_min_freq;
 
 	while (1) {
 		set_current_state(TASK_INTERRUPTIBLE);
@@ -2296,14 +2112,6 @@ static int cpufreq_gov_dbs_up_task(void *data)
 		}
 
 		mutex_lock(&this_dbs_info->timer_mutex);
-
-		input_event_min_freq = input_event_min_freq_array[num_online_cpus() - 1];
-		if (policy->cur < input_event_min_freq) {
-
-			dbs_tuners_ins.powersave_bias = 0;
-			dbs_freq_increase(policy, input_event_min_freq);
-			this_dbs_info->prev_cpu_idle = get_cpu_idle_time(cpu, &this_dbs_info->prev_cpu_wall);
-		}
 
 		mutex_unlock(&this_dbs_info->timer_mutex);
 

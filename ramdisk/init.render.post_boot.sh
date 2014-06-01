@@ -60,10 +60,10 @@ chmod -h 664 /sys/devices/system/cpu/cpu3/online
 ############################
 # Enable C-State: C-1
 #
-echo 1 > /sys/module/msm_pm/modes/cpu0/retention/idle_enabled
-echo 1 > /sys/module/msm_pm/modes/cpu1/retention/idle_enabled
-echo 1 > /sys/module/msm_pm/modes/cpu2/retention/idle_enabled
-echo 1 > /sys/module/msm_pm/modes/cpu3/retention/idle_enabled
+# echo 1 > /sys/module/msm_pm/modes/cpu0/retention/idle_enabled
+# echo 1 > /sys/module/msm_pm/modes/cpu1/retention/idle_enabled
+# echo 1 > /sys/module/msm_pm/modes/cpu2/retention/idle_enabled
+# echo 1 > /sys/module/msm_pm/modes/cpu3/retention/idle_enabled
 
 ############################
 # CPU-Boost Settings
@@ -72,6 +72,7 @@ echo 1 > /sys/module/msm_pm/modes/cpu3/retention/idle_enabled
 # echo 600000 > /sys/module/cpu_boost/parameters/sync_threshold
 # echo 787200 > /sys/module/cpu_boost/parameters/input_boost_freq
 # echo 40 > /sys/module/cpu_boost/parameters/input_boost_ms
+echo 384000 > /sys/module/cpu_boost/parameters/plug_boost_freq
 
 ############################
 # mount debugfs
@@ -111,7 +112,6 @@ echo 25 > /sys/kernel/mm/uksm/max_cpu_percentage
 #
 echo 8 > /proc/sys/vm/page-cluster
 echo 1 > /proc/sys/kernel/multi_threading
-
 
 ############################
 # Script to launch frandom at boot by Ryuinferno @ XDA

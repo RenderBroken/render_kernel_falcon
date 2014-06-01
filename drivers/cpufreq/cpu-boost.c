@@ -47,7 +47,7 @@ static struct work_struct input_boost_work;
 static unsigned int boost_ms = 20;
 module_param(boost_ms, uint, 0644);
 
-static unsigned int sync_threshold = 384000;
+static unsigned int sync_threshold = 787200;
 module_param(sync_threshold, uint, 0644);
 
 static unsigned int input_boost_freq = 600000;
@@ -56,11 +56,14 @@ module_param(input_boost_freq, uint, 0644);
 static unsigned int input_boost_ms = 40;
 module_param(input_boost_ms, uint, 0644);
 
-static unsigned int migration_load_threshold = 15;
+static unsigned int migration_load_threshold = 40;
 module_param(migration_load_threshold, uint, 0644);
 
 static bool load_based_syncs = true;
 module_param(load_based_syncs, bool, 0644);
+
+static bool hotplug_boost;
+module_param(hotplug_boost, bool, 0644);
 
 static u64 last_input_time;
 #define MIN_INPUT_INTERVAL (150 * USEC_PER_MSEC)
@@ -186,7 +189,7 @@ static void run_boost_migration(unsigned int cpu)
 		cpufreq_update_policy(src_cpu);
 	if (cpu_online(dest_cpu)) {
 		cpufreq_update_policy(dest_cpu);
-		queue_delayed_work_on(dest_cpu, cpu_boost_wq,
+		queue_delayed_work_on(0, cpu_boost_wq,
 			&s->boost_rem, msecs_to_jiffies(boost_ms));
 	} else {
 		s->boost_min = 0;
@@ -272,13 +275,19 @@ static void do_input_boost(struct work_struct *work)
 		ret = cpufreq_get_policy(&policy, i);
 		if (ret)
 			continue;
-		if (policy.cur >= input_boost_freq)
+		if (policy.cur >= input_boost_freq){
+			if (!delayed_work_pending(&i_sync_info->input_boost_rem)
+			     && i_sync_info->input_boost_min != 0){
+				i_sync_info->input_boost_min = 0;
+				cpufreq_update_policy(i);
+			}
 			continue;
+		}
 
 		cancel_delayed_work_sync(&i_sync_info->input_boost_rem);
 		i_sync_info->input_boost_min = input_boost_freq;
 		cpufreq_update_policy(i);
-		queue_delayed_work_on(i_sync_info->cpu, cpu_boost_wq,
+		queue_delayed_work_on(0, cpu_boost_wq,
 			&i_sync_info->input_boost_rem,
 			msecs_to_jiffies(input_boost_ms));
 	}
@@ -289,18 +298,22 @@ static void cpuboost_input_event(struct input_handle *handle,
 		unsigned int type, unsigned int code, int value)
 {
 	u64 now;
+	int ret;
+	struct cpufreq_policy policy;
 
-	if (!input_boost_freq)
+	if (!input_boost_freq || work_pending(&input_boost_work))
+		return;
+
+	ret = cpufreq_get_policy(&policy, 0);
+	if (!ret && input_boost_freq <= policy.cpuinfo.min_freq)
 		return;
 
 	now = ktime_to_us(ktime_get());
 	if (now - last_input_time < MIN_INPUT_INTERVAL)
 		return;
 
-	if (work_pending(&input_boost_work))
-		return;
-
 	queue_work(cpu_boost_wq, &input_boost_work);
+
 	last_input_time = ktime_to_us(ktime_get());
 }
 
@@ -342,7 +355,6 @@ static void cpuboost_input_disconnect(struct input_handle *handle)
 }
 
 static const struct input_device_id cpuboost_ids[] = {
-	/* multi-touch touchscreen */
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
 			INPUT_DEVICE_ID_MATCH_ABSBIT,
@@ -350,20 +362,14 @@ static const struct input_device_id cpuboost_ids[] = {
 		.absbit = { [BIT_WORD(ABS_MT_POSITION_X)] =
 			BIT_MASK(ABS_MT_POSITION_X) |
 			BIT_MASK(ABS_MT_POSITION_Y) },
-	},
-	/* touchpad */
+	}, /* multi-touch touchscreen */
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_KEYBIT |
 			INPUT_DEVICE_ID_MATCH_ABSBIT,
 		.keybit = { [BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH) },
 		.absbit = { [BIT_WORD(ABS_X)] =
 			BIT_MASK(ABS_X) | BIT_MASK(ABS_Y) },
-	},
-	/* Keypad */
-	{
-		.flags = INPUT_DEVICE_ID_MATCH_EVBIT,
-		.evbit = { BIT_MASK(EV_KEY) },
-	},
+	}, /* touchpad */
 	{ },
 };
 
@@ -373,6 +379,37 @@ static struct input_handler cpuboost_input_handler = {
 	.disconnect     = cpuboost_input_disconnect,
 	.name           = "cpu-boost",
 	.id_table       = cpuboost_ids,
+};
+
+static int cpuboost_cpu_callback(struct notifier_block *cpu_nb,
+				 unsigned long action, void *hcpu)
+{
+	int ret;
+	struct cpufreq_policy policy;
+
+	switch (action & ~CPU_TASKS_FROZEN) {
+	case CPU_UP_PREPARE:
+	case CPU_DEAD:
+	case CPU_UP_CANCELED:
+		break;
+	case CPU_ONLINE:
+		if (!hotplug_boost || !input_boost_freq ||
+		    work_pending(&input_boost_work))
+			break;
+		ret = cpufreq_get_policy(&policy, 0);
+		if (!ret && input_boost_freq <= policy.cpuinfo.min_freq)
+			break;
+		queue_work(cpu_boost_wq, &input_boost_work);
+		last_input_time = ktime_to_us(ktime_get());
+		break;
+	default:
+		break;
+	}
+	return NOTIFY_OK;
+}
+
+static struct notifier_block __refdata cpu_nblk = {
+        .notifier_call = cpuboost_cpu_callback,
 };
 
 static int cpu_boost_init(void)
@@ -404,6 +441,10 @@ static int cpu_boost_init(void)
 	ret = input_register_handler(&cpuboost_input_handler);
 	if (ret)
 		pr_err("Cannot register cpuboost input handler.\n");
+
+	ret = register_hotcpu_notifier(&cpu_nblk);
+	if (ret)
+		pr_err("Cannot register cpuboost hotplug handler.\n");
 
 	return ret;
 }
