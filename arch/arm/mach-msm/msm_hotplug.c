@@ -36,14 +36,15 @@
 
 #define MSM_HOTPLUG		"msm_hotplug"
 #define HOTPLUG_ENABLED		1
-#define DEFAULT_UPDATE_RATE	HZ / 10
-#define START_DELAY		HZ * 20
+#define DEFAULT_UPDATE_RATE	100 / 10
+#define START_DELAY		100 * 20
 #define MIN_INPUT_INTERVAL	150 * 1000L
 #define DEFAULT_HISTORY_SIZE	10
 #define DEFAULT_DOWN_LOCK_DUR	500
 #define DEFAULT_BOOST_LOCK_DUR	2500 * 1000L
 #define DEFAULT_NR_CPUS_BOOSTED	2
-#define DEFAULT_MIN_CPUS_ONLINE	1
+#define DEFAULT_MIN_CPUS_ONLINE	2
+#define DEFAULT_SUSPEND_MAX_CPUS 2
 #define DEFAULT_MAX_CPUS_ONLINE	NR_CPUS
 #define DEFAULT_FAST_LANE_LOAD	95
 #define DEFAULT_SUSPEND_DEFER_TIME	10
@@ -90,6 +91,7 @@ static struct cpu_hotplug {
 	.boost_lock_dur = DEFAULT_BOOST_LOCK_DUR,
 	.fast_lane_load = DEFAULT_FAST_LANE_LOAD,
 	.suspend_defer_time = DEFAULT_SUSPEND_DEFER_TIME
+	.suspend_max_cpus = DEFAULT_SUSPEND_MAX_CPUS
 };
 
 static struct workqueue_struct *hotplug_wq;
