@@ -27,7 +27,6 @@
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
 #include <linux/earlysuspend.h>
 #endif
-
 #include <linux/mutex.h>
 #include <linux/input.h>
 #include <linux/math64.h>
@@ -46,8 +45,10 @@
 #define DEFAULT_MIN_CPUS_ONLINE	2
 #define DEFAULT_SUSPEND_MAX_CPUS 2
 #define DEFAULT_MAX_CPUS_ONLINE	NR_CPUS
-#define DEFAULT_FAST_LANE_LOAD	95
+#define DEFAULT_FAST_LANE_LOAD	120
+#if defined(CONFIG_LCD_NOTIFY) || defined(CONFIG_POWERSUSPEND) || defined(CONFIG_HAS_EARLYSUSPEND)
 #define DEFAULT_SUSPEND_DEFER_TIME	10
+#endif
 
 static unsigned int debug = 0;
 module_param_named(debug_mask, debug, uint, 0644);
@@ -60,7 +61,10 @@ do { 				\
 
 static struct cpu_hotplug {
 	unsigned int msm_enabled;
+#if defined(CONFIG_LCD_NOTIFY) || defined(CONFIG_POWERSUSPEND) || defined(CONFIG_HAS_EARLYSUSPEND)
 	unsigned int suspended;
+	unsigned int suspend_defer_time;
+#endif
 	unsigned int target_cpus;
 	unsigned int min_cpus_online;
 	unsigned int max_cpus_online;
@@ -72,25 +76,28 @@ static struct cpu_hotplug {
 	u64 boost_lock_dur;
 	u64 last_input;
 	unsigned int fast_lane_load;
-	unsigned int suspend_defer_time;
-	struct mutex msm_hotplug_mutex;
 	struct work_struct up_work;
 	struct work_struct down_work;
+#if defined(CONFIG_LCD_NOTIFY) || defined(CONFIG_POWERSUSPEND) || defined(CONFIG_HAS_EARLYSUSPEND)
 	struct delayed_work suspend_work;
 	struct work_struct resume_work;
+	struct mutex msm_hotplug_mutex;
 #ifdef CONFIG_LCD_NOTIFY
 	struct notifier_block notif;
 #endif
+#endif
 } hotplug = {
 	.msm_enabled = HOTPLUG_ENABLED,
-	.suspended = 0,
 	.min_cpus_online = DEFAULT_MIN_CPUS_ONLINE,
 	.max_cpus_online = DEFAULT_MAX_CPUS_ONLINE,
+#if defined(CONFIG_LCD_NOTIFY) || defined(CONFIG_POWERSUSPEND) || defined(CONFIG_HAS_EARLYSUSPEND)
+	.suspended = 0,
+	.suspend_defer_time = DEFAULT_SUSPEND_DEFER_TIME,
+#endif
 	.cpus_boosted = DEFAULT_NR_CPUS_BOOSTED,
 	.down_lock_dur = DEFAULT_DOWN_LOCK_DUR,
 	.boost_lock_dur = DEFAULT_BOOST_LOCK_DUR,
 	.fast_lane_load = DEFAULT_FAST_LANE_LOAD,
-	.suspend_defer_time = DEFAULT_SUSPEND_DEFER_TIME
 	.suspend_max_cpus = DEFAULT_SUSPEND_MAX_CPUS
 };
 
@@ -129,8 +136,8 @@ struct down_lock {
 static DEFINE_PER_CPU(struct down_lock, lock_info);
 
 struct cpu_load_data {
-	u64 prev_cpu_idle;
-	u64 prev_cpu_wall;
+	cputime64_t prev_cpu_idle;
+	cputime64_t prev_cpu_wall;
 	unsigned int avg_load_maxfreq;
 	unsigned int cur_load_maxfreq;
 	unsigned int samples;
@@ -445,21 +452,23 @@ static unsigned int load_to_update_rate(unsigned int load)
 	return ret;
 }
 
-static int reschedule_hotplug_work(void)
+static void reschedule_hotplug_work(void)
 {
-	return queue_delayed_work_on(0, hotplug_wq, &hotplug_work,
-				     msecs_to_jiffies(load_to_update_rate(
-						      stats.cur_avg_load)));
+	queue_delayed_work_on(0, hotplug_wq, &hotplug_work,
+			      msecs_to_jiffies(load_to_update_rate(
+					       stats.cur_avg_load)));
 }
 
 static void msm_hotplug_work(struct work_struct *work)
 {
 	unsigned int i, target = 0;
 
+#if defined(CONFIG_LCD_NOTIFY) || defined(CONFIG_POWERSUSPEND) || defined(CONFIG_HAS_EARLYSUSPEND)
 	if (hotplug.suspended) {
 		dprintk("%s: suspended.\n", MSM_HOTPLUG);
 		return;
 	}
+#endif
 
 	update_load_stats();
 
