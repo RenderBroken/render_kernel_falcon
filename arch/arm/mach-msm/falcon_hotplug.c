@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, Francisco Franco <franciscofranco.1990@gmail.com>. 
+ * Copyright (c) 2013, Francisco Franco <franciscofranco.1990@gmail.com>.
  *
  * Small algorithm changes for more performance/battery life
  * Copyright (c) 2014, Alexander Christ <alex.christ@hotmail.de>
@@ -62,6 +62,7 @@ struct hotplug_data {
 	unsigned int single_cpu_threshold;
 
 	unsigned long timestamp;
+	unsigned int online_cpus;
 
 	/* For the three hot-plug-able Cores */
 	unsigned int counter[2];
@@ -156,23 +157,33 @@ static int get_load_for_all_cpu(void)
 		hot_data->cpu_load_stats[cpu] = get_cpu_load(cpu);
 		load = load + hot_data->cpu_load_stats[cpu];
 	}
-	
-	return (load / num_online_cpus());
+
+	return (load / hot_data->online_cpus);
 }
 
 /*
  * Calculates the load for a given cpu
- */ 
+ */
 
-static void calculate_load_for_cpu(int cpu) 
+static void calculate_load_for_cpu(int cpu)
 {
 	struct cpufreq_policy policy;
 	int avg_load;
 
+	/* CPU is stressed */
+	if (get_cpu_load(cpu) == 98 && hot_data->counter[cpu] >= 4
+		&& !cpu_online(cpu + 2)) {
+		printk("[Hot-Plug]: CPU%u is stressed, boosting CPU%u \n", cpu, (cpu + 2));
+		cpu_up(cpu + 2);
+		hot_data->timestamp = jiffies;
+		hot_data->online_cpus = num_online_cpus();
+		return;
+	}
+
 	avg_load = get_load_for_all_cpu();
 
 	cpufreq_get_policy(&policy, cpu);
-	/*  
+	/*
 	 * We are above our threshold, so update our counter for cpu.
 	 * Consider this only, if we are on our max frequency
 	 */
@@ -185,18 +196,18 @@ static void calculate_load_for_cpu(int cpu)
 	else {
 		if (hot_data->counter[cpu] > 0)
 			hot_data->counter[cpu]--;
-	}	
+	}
 }
 /*
  * Finds the lowest operation core to offline
  */
 
-static void put_cpu_down(int cpu) 
+static void put_cpu_down(int cpu)
 {
 	int current_cpu = 0;
 
-	/* Prevent fast on-/offlining */ 
-	if (time_is_after_jiffies(hot_data->timestamp + (HZ * hot_data->min_online_time)))	
+	/* Prevent fast on-/offlining */
+	if (time_is_after_jiffies(hot_data->timestamp + (HZ * hot_data->min_online_time)))
 		return;
 
 	/* No core was online anyway */
@@ -239,20 +250,20 @@ static void put_cpu_down(int cpu)
 					current_cpu = cpu;
 					break;
 				} else {
-					current_cpu = cpu - 1;	
+					current_cpu = cpu - 1;
 					break;
 				}
 			}
 		break;
 	}
 
-#ifdef FALCON_DEBUG						
+#ifdef FALCON_DEBUG
 	printk("[Hot-Plug]: CPU%u ready for offlining\n", current_cpu);
-#endif	
+#endif
 	cpu_down(current_cpu);
 	hot_data->cpu_load_stats[cpu] = 0;
 	hot_data->timestamp = jiffies;
-
+	hot_data->online_cpus = num_online_cpus();
 }
 
 /**
@@ -263,10 +274,9 @@ static void put_cpu_down(int cpu)
 static void __ref decide_hotplug_func(struct work_struct *work)
 {
 	int i, j;
-	unsigned int current_online_cpus = num_online_cpus();
 
 	/* Reschedule early if we don't need to bother about calculations */
-	if (unlikely(current_online_cpus == 1))
+	if (unlikely(hot_data->online_cpus == 1))
 		queue_delayed_work(system_power_efficient_wq, &decide_hotplug, msecs_to_jiffies(hot_data->hotplug_sampling * HZ));
 
 	for (i = 0, j = 2; i < 2; i++, j++) {
@@ -281,22 +291,23 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 #endif
 				cpu_up(j);
 				hot_data->timestamp = jiffies;
+				hot_data->online_cpus = num_online_cpus();
 			}
 		}
 		else {
 			if (hot_data->counter[i] >= 0) {
-				put_cpu_down(j);	
+				put_cpu_down(j);
 			}
 		}
 	}
-	
+
 	/* Make a dedicated work_queue */
 	queue_delayed_work_on(0, wq, &decide_hotplug, msecs_to_jiffies(hot_data->hotplug_sampling * HZ));
 }
 
 #ifdef CONFIG_POWERSUSPEND
 static void suspend_func(struct work_struct *work)
-{	 
+{
 	int cpu;
 
 	/* cancel the hotplug work when the screen is off and flush the WQ */
@@ -304,14 +315,15 @@ static void suspend_func(struct work_struct *work)
 	cancel_delayed_work_sync(&decide_hotplug);
 	cancel_work_sync(&resume);
 
-	for_each_online_cpu(cpu) 
+	for_each_online_cpu(cpu)
 		if (cpu)
 			cpu_down(cpu);
+	hot_data->online_cpus = num_online_cpus();
 
 #ifdef FALCON_DEBUG
-	pr_info("[Hot-Plug]: Early Suspend stopping Hotplug work. CPUs online: %d\n", num_online_cpus());
+	pr_info("[Hot-Plug]: Early Suspend stopping Hotplug work. CPUs online: %d\n", hot_data->online_cpus);
 #endif
-    
+
 }
 
 static void __ref resume_func(struct work_struct *work)
@@ -325,9 +337,10 @@ static void __ref resume_func(struct work_struct *work)
 	hot_data->counter[0] = 0;
 	hot_data->counter[1] = 0;
 	hot_data->timestamp = jiffies;
+	hot_data->online_cpus = num_online_cpus();
 
 #ifdef FALCON_DEBUG
-	pr_info("[Hot-Plug]: Late Resume starting Hotplug work. CPUs online: %d\n", num_online_cpus());
+	pr_info("[Hot-Plug]: Late Resume starting Hotplug work. CPUs online: %d\n", hot_data->online_cpus);
 #endif
 	queue_delayed_work_on(0, wq, &decide_hotplug, msecs_to_jiffies(hot_data->hotplug_sampling * HZ));
 }
@@ -435,7 +448,7 @@ static ssize_t store_all_cpus_threshold(struct kobject *kobj,
 static struct global_attr all_cpus_threshold_attr = __ATTR(all_cpus_threshold, 0664,
 					show_all_cpus_threshold, store_all_cpus_threshold);
 
-static struct attribute *falcon_hotplug_attributes[] = 
+static struct attribute *falcon_hotplug_attributes[] =
 {
 	&hotplug_sampling_rate_attr.attr,
 	&single_core_threshold_attr.attr,
@@ -444,7 +457,7 @@ static struct attribute *falcon_hotplug_attributes[] =
 	NULL
 };
 
-static struct attribute_group hotplug_attr_group = 
+static struct attribute_group hotplug_attr_group =
 {
 	.attrs  = falcon_hotplug_attributes,
 };
@@ -484,9 +497,10 @@ int __init falcon_hotplug_init(void)
 	hot_data->counter[0] = 0;
 	hot_data->counter[1] = 0;
 	hot_data->timestamp = jiffies;
+	hot_data->online_cpus = num_online_cpus();
 
 	wq = create_singlethread_workqueue("falcon_hotplug_workqueue");
-    
+
 	if (!wq)
 		return -ENOMEM;
 
@@ -498,7 +512,7 @@ int __init falcon_hotplug_init(void)
 
 	INIT_DELAYED_WORK(&decide_hotplug, decide_hotplug_func);
 	queue_delayed_work_on(0, wq, &decide_hotplug, msecs_to_jiffies(20000));
-	
+
 	return 0;
 }
 MODULE_AUTHOR("Francisco Franco <franciscofranco.1990@gmail.com>, "
