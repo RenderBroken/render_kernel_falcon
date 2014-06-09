@@ -23,7 +23,7 @@
 
 #include <linux/delay.h>
 #include <linux/device.h>
-#include <linux/earlysuspend.h>
+#include <linux/powersuspend.h>
 #include <linux/freezer.h>
 #include <linux/gpio.h>
 #include <linux/input.h>
@@ -52,10 +52,6 @@ struct akm8963_data {
 	struct device		*class_dev;
 	struct class		*compass;
 	struct work_struct	work;
-
-#ifdef CONFIG_HAS_EARLYSUSPEND
-	struct early_suspend	akm_early_suspend;
-#endif
 
 	wait_queue_head_t	drdy_wq;
 	wait_queue_head_t	open_wq;
@@ -1287,8 +1283,8 @@ static irqreturn_t akm8963_irq(int irq, void *handle)
 	return IRQ_HANDLED;
 }
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
-static void akm8963_suspend(struct early_suspend *handler)
+#ifdef CONFIG_POWERSUSPEND
+static void akm8963_suspend(struct power_suspend *h)
 {
 	dev_info(&s_akm->i2c->dev, "%s: Suspend\n", __func__);
 
@@ -1304,7 +1300,7 @@ static void akm8963_suspend(struct early_suspend *handler)
 	wake_up(&s_akm->open_wq);
 }
 
-static void akm8963_resume(struct early_suspend *handler)
+static void akm8963_resume(struct power_suspend *h)
 {
 	dev_info(&s_akm->i2c->dev, "%s: Resume\n", __func__);
 
@@ -1318,7 +1314,12 @@ static void akm8963_resume(struct early_suspend *handler)
 
 	wake_up(&s_akm->open_wq);
 }
-#endif /* CONFIG_HAS_EARLYSUSPEND */
+
+static struct power_suspend akm8963_power_suspend_handler = {
+	.suspend = akm8963_suspend,
+	.resume = akm8963_resume,
+};
+#endif
 
 #ifdef CONFIG_OF
 static struct akm8963_platform_data *
@@ -1492,10 +1493,8 @@ int akm8963_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		goto exit_sfs_fail;
 	}
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
-	s_akm->akm_early_suspend.suspend = akm8963_suspend;
-	s_akm->akm_early_suspend.resume = akm8963_resume;
-	register_early_suspend(&s_akm->akm_early_suspend);
+#ifdef CONFIG_POWERSUSPEND
+	register_power_suspend(&akm8963_power_suspend_handler);
 #endif
 
 	dev_info(&client->dev, "%s: success", __func__);
@@ -1528,7 +1527,9 @@ static int akm8963_remove(struct i2c_client *client)
 		regulator_put(akm->vdd);
 	}
 
-	unregister_early_suspend(&akm->akm_early_suspend);
+#ifdef CONFIG_POWERSUSPEND
+	unregister_power_suspend(&akm8963_power_suspend_handler);
+#endif
 	remove_sysfs_interfaces(akm);
 	if (misc_deregister(&akm8963_dev) < 0)
 		dev_err(&client->dev, "%s: misc deregister failed.", __func__);

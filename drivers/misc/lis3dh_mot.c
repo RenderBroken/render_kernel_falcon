@@ -17,7 +17,7 @@
  */
 
 #include <linux/delay.h>
-#include <linux/earlysuspend.h>
+#include <linux/powersuspend.h>
 #include <linux/err.h>
 #include <linux/errno.h>
 #include <linux/fs.h>
@@ -149,10 +149,6 @@ struct lis3dh_data {
 	int hw_initialized;
 	atomic_t enabled;
 	int on_before_suspend;
-
-#ifdef CONFIG_HAS_EARLYSUSPEND
-	struct early_suspend lis3dh_early_suspend;
-#endif
 
 	u8 shift_adj;
 	u8 resume_state[5];
@@ -796,20 +792,25 @@ static void lis3dh_input_cleanup(struct lis3dh_data *lis)
 	input_free_device(lis->input_dev);
 }
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
-static void lis3dh_resume(struct early_suspend *handler)
+#ifdef CONFIG_POWERSUSPEND
+static void lis3dh_resume(struct power_suspend *h)
 {
 	if (lis3dh_misc_data->on_before_suspend)
 		lis3dh_enable(lis3dh_misc_data);
 }
 
-static void lis3dh_suspend(struct early_suspend *handler)
+static void lis3dh_suspend(struct power_suspend *h)
 {
 	lis3dh_misc_data->on_before_suspend =
 		atomic_read(&lis3dh_misc_data->enabled);
 	lis3dh_disable(lis3dh_misc_data);
 }
-#endif /* CONFIG_HAS_EARLYSUSPEND */
+
+static struct power_suspend lis3dh_power_suspend_handler = {
+	.suspend = lis3dh_suspend,
+	.resume = lis3dh_resume,
+};
+#endif
 
 #ifdef CONFIG_OF
 static struct lis3dh_platform_data *
@@ -980,11 +981,9 @@ static int lis3dh_probe(struct i2c_client *client,
 
 	lis3dh_device_power_off(lis);
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
-	lis->lis3dh_early_suspend.suspend = lis3dh_suspend;
-	lis->lis3dh_early_suspend.resume = lis3dh_resume;
-	register_early_suspend(&lis->lis3dh_early_suspend);
-#endif
+#ifdef CONFIG_POWERSUSPEND
+	register_power_suspend(&lis3dh_power_suspend_handler);
+#endif 
 
 	/* As default, do not report information */
 	atomic_set(&lis->enabled, 0);
