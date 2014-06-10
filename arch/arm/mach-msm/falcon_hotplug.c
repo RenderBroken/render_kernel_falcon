@@ -33,9 +33,10 @@
 #include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
-#include <linux/kernel_stat.h>
 #include <asm/cputime.h>
 #include <linux/tick.h>
+#include <linux/time.h>
+#include <linux/kernel_stat.h>
 #ifdef CONFIG_POWERSUSPEND
 #include <linux/powersuspend.h>
 #endif
@@ -62,9 +63,11 @@ struct hotplug_data {
 	unsigned int single_cpu_threshold;
 
 	unsigned long timestamp;
+	unsigned int online_cpus;
+	unsigned int possible_cpus;
 
 	/* For the three hot-plug-able Cores */
-	unsigned int counter[2];
+	unsigned int counter[3];
 	unsigned int cpu_load_stats[3];
 } *hot_data;
 
@@ -78,6 +81,7 @@ static struct workqueue_struct *wq;
 static struct delayed_work decide_hotplug;
 static struct work_struct resume;
 static struct work_struct suspend;
+
 
 static inline cputime64_t get_cpu_idle_time_jiffy(unsigned int cpu,
 						  cputime64_t *wall)
@@ -157,7 +161,21 @@ static int get_load_for_all_cpu(void)
 		load = load + hot_data->cpu_load_stats[cpu];
 	}
 	
-	return (load / num_online_cpus());
+	return (load / hot_data->online_cpus);
+}
+
+static void __ref set_cpu_up(int cpu) 
+{
+	if (!cpu_online(cpu)
+		&& hot_data->online_cpus != hot_data->possible_cpus) {
+#ifdef FALCON_DEBUG
+		printk("[Hot-Plug]: CPU%u ready for onlining\n", cpu);
+#endif
+		cpu_up(cpu);
+		hot_data->timestamp = jiffies;
+		hot_data->online_cpus = num_online_cpus();
+	}
+	return;
 }
 
 /*
@@ -181,19 +199,33 @@ static void calculate_load_for_cpu(int cpu)
 		&& likely(hot_data->counter[cpu] < HIGH_LOAD_COUNTER)
 		&& cpufreq_quick_get(cpu) == policy.max) {
 			hot_data->counter[cpu] += 2;
+
+			/* CPU is stressed */
+			if (get_cpu_load(cpu) >= 100 && 
+				avg_load >= 100 && hot_data->counter[cpu] >= 4) {
+#ifdef FALCON_DEBUG
+				printk("[Hot-Plug]: CPU%u is stressed, considering boosting CPU%u \n", cpu, (cpu + 2));
+#endif
+				set_cpu_up(cpu + 1);
+				return;
+			}
+
 	}
 	else {
 		if (hot_data->counter[cpu] > 0)
 			hot_data->counter[cpu]--;
 	}	
 }
+
 /*
  * Finds the lowest operation core to offline
  */
-
 static void put_cpu_down(int cpu) 
 {
-	int current_cpu = 0;
+	int current_cpu = cpu; 
+	int cpu_load = 0;
+	int lowest_load = 100;
+	int j;
 
 	/* Prevent fast on-/offlining */ 
 	if (time_is_after_jiffies(hot_data->timestamp + (HZ * hot_data->min_online_time)))	
@@ -208,51 +240,25 @@ static void put_cpu_down(int cpu)
 	/*
 	 * Decide which core should be offlined
 	 */
-	switch(cpu) {
-		case 2:
-			if (cpu_online(cpu) && !cpu_online(cpu + 1)) {
-				current_cpu = cpu;
-				break;
-			} else if (!cpu_online(cpu) && cpu_online(cpu + 1)) {
-				current_cpu = cpu + 1;
-				break;
-			} else if (cpu_online(cpu) && cpu_online(cpu + 1)) {
-				if (get_cpu_load(cpu) >= get_cpu_load(cpu + 1)) {
-					current_cpu = cpu + 1;
-					break;
-				} else {
-					current_cpu = cpu;
-					break;
-				}
-			}
-		break;
-		case 3:
-			if (cpu_online(cpu - 1) && !cpu_online(cpu)) {
-				current_cpu = cpu - 1;
-				break;
-			} else if (cpu_online(cpu) && cpu_online(cpu - 1)) {
-				current_cpu = cpu;
-				break;
-			} else if (cpu_online(cpu) && cpu_online(cpu - 1)
-				&& (cpu - 1) != 1) {
-				if (get_cpu_load(cpu - 1) >= get_cpu_load(cpu)) {
-					current_cpu = cpu;
-					break;
-				} else {
-					current_cpu = cpu - 1;	
-					break;
-				}
-			}
-		break;
+	for (j = 1; j < 4; j++) {
+
+		if (!cpu_online(j))
+			continue;
+
+		cpu_load = get_cpu_load(j);
+		if (cpu_load < lowest_load) {
+			lowest_load = cpu_load;
+			current_cpu = j;	
+		}
 	}
 
 #ifdef FALCON_DEBUG						
 	printk("[Hot-Plug]: CPU%u ready for offlining\n", current_cpu);
 #endif	
 	cpu_down(current_cpu);
-	hot_data->cpu_load_stats[cpu] = 0;
+	hot_data->cpu_load_stats[current_cpu] = 0;
 	hot_data->timestamp = jiffies;
-
+	hot_data->online_cpus = num_online_cpus();
 }
 
 /**
@@ -262,26 +268,18 @@ static void put_cpu_down(int cpu)
 
 static void __ref decide_hotplug_func(struct work_struct *work)
 {
-	int i, j;
-	unsigned int current_online_cpus = num_online_cpus();
+	int i, j, on_threshold = 9;
 
-	/* Reschedule early if we don't need to bother about calculations */
-	if (unlikely(current_online_cpus == 1))
-		queue_delayed_work(system_power_efficient_wq, &decide_hotplug, msecs_to_jiffies(hot_data->hotplug_sampling * HZ));
-
-	for (i = 0, j = 2; i < 2; i++, j++) {
+	for (i = 0, j = 1; i < 3; i++, j++) {
 
 		/* Do load calculation for each cpu counter */
 		calculate_load_for_cpu(i);
-
-		if (hot_data->counter[i] >= 10) {
-			if (!cpu_online(j)) {
-#ifdef FALCON_DEBUG
-				printk("[Hot-Plug]: CPU%u ready for onlining\n", j);
-#endif
-				cpu_up(j);
-				hot_data->timestamp = jiffies;
-			}
+		
+		if (hot_data->online_cpus == 1)
+			on_threshold = 5;
+		
+		if (hot_data->counter[i] >= on_threshold) {
+			set_cpu_up(j);
 		}
 		else {
 			if (hot_data->counter[i] >= 0) {
@@ -307,27 +305,28 @@ static void suspend_func(struct work_struct *work)
 	for_each_online_cpu(cpu) 
 		if (cpu)
 			cpu_down(cpu);
+	hot_data->online_cpus = num_online_cpus();
 
 #ifdef FALCON_DEBUG
-	pr_info("[Hot-Plug]: Early Suspend stopping Hotplug work. CPUs online: %d\n", num_online_cpus());
+	pr_info("[Hot-Plug]: Early Suspend stopping Hotplug work. CPUs online: %d\n", hot_data->online_cpus);
 #endif
     
 }
 
-static void __ref resume_func(struct work_struct *work)
+static void resume_func(struct work_struct *work)
 {
 	/* Online only the second core */
-	cpu_up(1);
+	set_cpu_up(1);
 
 	cancel_work_sync(&suspend);
 
 	/* Resetting Counters */
 	hot_data->counter[0] = 0;
 	hot_data->counter[1] = 0;
-	hot_data->timestamp = jiffies;
+	hot_data->counter[2] = 0;
 
 #ifdef FALCON_DEBUG
-	pr_info("[Hot-Plug]: Late Resume starting Hotplug work. CPUs online: %d\n", num_online_cpus());
+	pr_info("[Hot-Plug]: Late Resume starting Hotplug work. CPUs online: %d\n", hot_data->online_cpus);
 #endif
 	queue_delayed_work_on(0, wq, &decide_hotplug, msecs_to_jiffies(hot_data->hotplug_sampling * HZ));
 }
@@ -483,7 +482,10 @@ int __init falcon_hotplug_init(void)
 	/* Resetting Counters */
 	hot_data->counter[0] = 0;
 	hot_data->counter[1] = 0;
+	hot_data->counter[2] = 0;
 	hot_data->timestamp = jiffies;
+	hot_data->online_cpus = num_online_cpus();
+	hot_data->possible_cpus = num_possible_cpus();
 
 	wq = create_singlethread_workqueue("falcon_hotplug_workqueue");
     
@@ -495,7 +497,6 @@ int __init falcon_hotplug_init(void)
 	INIT_WORK(&resume, resume_func);
 	INIT_WORK(&suspend, suspend_func);
 #endif
-
 	INIT_DELAYED_WORK(&decide_hotplug, decide_hotplug_func);
 	queue_delayed_work_on(0, wq, &decide_hotplug, msecs_to_jiffies(20000));
 	
