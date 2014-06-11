@@ -78,22 +78,6 @@ echo 384000 > /sys/module/cpu_boost/parameters/plug_boost_freq
 mount -t debugfs nodev /sys/kernel/debug
 
 ############################
-# Tweak UKSM
-#
-chown root system /sys/kernel/mm/uksm/cpu_governor
-chown root system /sys/kernel/mm/uksm/run
-chown root system /sys/kernel/mm/uksm/sleep_millisecs
-chown root system /sys/kernel/mm/uksm/max_cpu_percentage
-chmod 644 /sys/kernel/mm/uksm/cpu_governor
-chmod 664 /sys/kernel/mm/uksm/sleep_millisecs
-chmod 664 /sys/kernel/mm/uksm/run
-chmod 644 /sys/kernel/mm/uksm/max_cpu_percentage
-echo 1 > /sys/kernel/mm/uksm/run
-echo 100 > /sys/kernel/mm/uksm/sleep_millisecs
-echo medium > /sys/kernel/mm/uksm/cpu_governor
-echo 25 > /sys/kernel/mm/uksm/max_cpu_percentage
-
-############################
 # Tweak ZSWAP
 #
 # echo 70 > /proc/sys/vm/swappiness
@@ -114,14 +98,14 @@ echo 1 > /proc/sys/kernel/multi_threading
 ############################
 # Script to launch frandom at boot by Ryuinferno @ XDA
 #
-chmod 644 /dev/frandom
-chmod 644 /dev/erandom
-mv /dev/random /dev/random.ori
-mv /dev/urandom /dev/urandom.ori
-ln /dev/frandom /dev/random
-chmod 644 /dev/random
-ln /dev/erandom /dev/urandom
-chmod 644 /dev/urandom
+# chmod 644 /dev/frandom
+# chmod 644 /dev/erandom
+# mv /dev/random /dev/random.ori
+# mv /dev/urandom /dev/urandom.ori
+# ln /dev/frandom /dev/random
+# chmod 644 /dev/random
+# ln /dev/erandom /dev/urandom
+# chmod 644 /dev/urandom
 
 ############################
 # CPUFreq and Governor Settings
@@ -157,8 +141,6 @@ echo 30000 > /sys/devices/system/cpu/cpufreq/interactive/timer_rate
 echo 70 > /sys/devices/system/cpu/cpufreq/interactive/up_threshold_any_cpu_load
 echo 787200 > /sys/devices/system/cpu/cpufreq/interactive/sync_freq
 echo 1094400 > /sys/devices/system/cpu/cpufreq/interactive/up_threshold_any_cpu_freq
-# echo 500 > /sys/module/msm_hotplug/down_lock_duration
-# echo 2500 > /sys/module/msm_hotplug/boost_lock_duration
 echo 192000 > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
 echo 192000 > /sys/devices/system/cpu/cpu1/cpufreq/scaling_min_freq
 echo 192000 > /sys/devices/system/cpu/cpu2/cpufreq/scaling_min_freq
