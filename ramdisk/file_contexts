@@ -315,7 +315,7 @@
 # PDS partition
 /pds(/.*)?                     u:object_r:pds_file:s0
 /pds/camera(/.*)?              u:object_r:camera_data_file:s0
-#line 1 "vendor/pa/sepolicy/file_contexts"
+#line 1 "vendor/cm/sepolicy/file_contexts"
 /cache/dalvik-cache(/.*)? u:object_r:dalvikcache_data_file:s0
 
 #############################
