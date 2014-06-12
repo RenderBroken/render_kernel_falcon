@@ -371,6 +371,10 @@ obj-$(CONFIG_ARCH_MSM8610) += gpiomux-v2.o gpiomux.o
 obj-$(CONFIG_ARCH_APQ8084) += gpiomux-v2.o gpiomux.o
 obj-$(CONFIG_ARCH_FSM9900) += gpiomux-v2.o gpiomux.o
 
+ifdef CONFIG_MSM_MPDEC
+obj-y += msm_mpdecision.o
+endif
+
 obj-$(CONFIG_MSM_SLEEP_STATS_DEVICE) += idle_stats_device.o
 obj-$(CONFIG_MSM_DCVS) += msm_dcvs_scm.o msm_dcvs.o
 obj-$(CONFIG_FALCON_HOTPLUG) += falcon_hotplug.o
