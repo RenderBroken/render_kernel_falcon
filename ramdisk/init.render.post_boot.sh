@@ -66,11 +66,10 @@ chmod -h 664 /sys/devices/system/cpu/cpu3/online
 ############################
 # CPU-Boost Settings
 #
-# echo 20 > /sys/module/cpu_boost/parameters/boost_ms
-# echo 600000 > /sys/module/cpu_boost/parameters/sync_threshold
-# echo 787200 > /sys/module/cpu_boost/parameters/input_boost_freq
-# echo 40 > /sys/module/cpu_boost/parameters/input_boost_ms
-echo 384000 > /sys/module/cpu_boost/parameters/plug_boost_freq
+echo 20 > /sys/module/cpu_boost/parameters/boost_ms
+echo 600000 > /sys/module/cpu_boost/parameters/sync_threshold
+echo 787200 > /sys/module/cpu_boost/parameters/input_boost_freq
+echo 40 > /sys/module/cpu_boost/parameters/input_boost_ms
 
 ############################
 # mount debugfs
@@ -146,3 +145,9 @@ echo 192000 > /sys/devices/system/cpu/cpu1/cpufreq/scaling_min_freq
 echo 192000 > /sys/devices/system/cpu/cpu2/cpufreq/scaling_min_freq
 echo 192000 > /sys/devices/system/cpu/cpu3/cpufreq/scaling_min_freq
 echo 1 > /dev/cpuctl/apps/cpu.notify_on_migrate
+
+############################
+# Scheduler and Read Ahead
+#
+echo row > /sys/block/mmcblk0/queue/scheduler
+echo 512 > /sys/block/mmcblk0/bdi/read_ahead_kb
