@@ -286,6 +286,9 @@ service irsc_util /system/bin/logwrapper /system/bin/irsc_util "/etc/sec_config"
     user root
     oneshot
 
+# enable slimport detection
+    write /sys/module/slimport/parameters/enable_irq 1
+
 service rmt_storage /system/bin/rmt_storage
     class core
     user root
