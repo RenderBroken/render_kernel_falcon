@@ -64,6 +64,11 @@ chmod -h 664 /sys/devices/system/cpu/cpu2/online
 chmod -h 664 /sys/devices/system/cpu/cpu3/online
 
 ############################
+# Stock MPDEC from QCOM
+#
+start mpdecision
+
+############################
 # CPU-Boost Settings
 #
 echo 20 > /sys/module/cpu_boost/parameters/boost_ms
@@ -130,20 +135,22 @@ echo interactive > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
 echo interactive > /sys/devices/system/cpu/cpu1/cpufreq/scaling_governor
 echo interactive > /sys/devices/system/cpu/cpu2/cpufreq/scaling_governor
 echo interactive > /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor
-echo 20000 > /sys/devices/system/cpu/cpufreq/interactive/above_hispeed_delay
+echo 20000 998400:40000 1190400:20000 > /sys/devices/system/cpu/cpufreq/interactive/above_hispeed_delay
 echo 90 > /sys/devices/system/cpu/cpufreq/interactive/go_hispeed_load
-echo 998400 > /sys/devices/system/cpu/cpufreq/interactive/hispeed_freq
+echo 787200 > /sys/devices/system/cpu/cpufreq/interactive/hispeed_freq
 echo 1 > /sys/devices/system/cpu/cpufreq/interactive/io_is_busy
-echo 85 > /sys/devices/system/cpu/cpufreq/interactive/target_loads
-echo 40000 > /sys/devices/system/cpu/cpufreq/interactive/min_sample_time
-echo 30000 > /sys/devices/system/cpu/cpufreq/interactive/timer_rate
-echo 70 > /sys/devices/system/cpu/cpufreq/interactive/up_threshold_any_cpu_load
-echo 787200 > /sys/devices/system/cpu/cpufreq/interactive/sync_freq
-echo 1094400 > /sys/devices/system/cpu/cpufreq/interactive/up_threshold_any_cpu_freq
-echo 192000 > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
-echo 192000 > /sys/devices/system/cpu/cpu1/cpufreq/scaling_min_freq
-echo 192000 > /sys/devices/system/cpu/cpu2/cpufreq/scaling_min_freq
-echo 192000 > /sys/devices/system/cpu/cpu3/cpufreq/scaling_min_freq
+echo 85 998400:90 1190400:70 > /sys/devices/system/cpu/cpufreq/interactive/target_loads
+echo 40000 998400:80000 > /sys/devices/system/cpu/cpufreq/interactive/min_sample_time
+echo 40000 384000:30000 1190400:20000 > /sys/devices/system/cpu/cpufreq/interactive/timer_rate
+echo 100000 > /sys/devices/system/cpu/cpufreq/interactive/sampling_down_factor
+echo -1 600000:30000 787100:40000 1190400:20000 > /sys/devices/system/cpu/cpufreq/interactive/timer_slack
+echo 50 > /sys/devices/system/cpu/cpufreq/interactive/up_threshold_any_cpu_load
+echo 600000 > /sys/devices/system/cpu/cpufreq/interactive/sync_freq
+echo 787200 > /sys/devices/system/cpu/cpufreq/interactive/up_threshold_any_cpu_freq
+echo 300000 > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
+echo 300000 > /sys/devices/system/cpu/cpu1/cpufreq/scaling_min_freq
+echo 300000 > /sys/devices/system/cpu/cpu2/cpufreq/scaling_min_freq
+echo 300000 > /sys/devices/system/cpu/cpu3/cpufreq/scaling_min_freq
 echo 1 > /dev/cpuctl/apps/cpu.notify_on_migrate
 
 ############################
