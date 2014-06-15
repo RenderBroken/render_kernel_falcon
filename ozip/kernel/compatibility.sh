@@ -29,9 +29,9 @@ rm -rf $INITD_DIR/03_retention
 if [ -e /system/bin/mpdecision ] ; then
 	busybox mv /system/bin/mpdecision /system/bin/mpdecision_bck
 fi
-if [ -e /system/bin/thermald ] ; then
-	busybox mv /system/bin/thermald /system/bin/thermald_bck
-fi
+# if [ -e /system/bin/thermald ] ; then
+# 	busybox mv /system/bin/thermald /system/bin/thermald_bck
+# fi
 
 # remove dalvik cache
 #rm -rf /data/dalvik-cache

@@ -2933,6 +2933,14 @@ config MSM_HOTPLUG
 	  The MSM hotplug driver controls on-/offlining of additional cores based
 	  on current cpu load.
 
+config MSM_MPDEC_QCOM
+	bool "MPDecision from QCOM"
+	depends on HOTPLUG_CPU
+	default n
+	help
+	  The Stock MSM hotplug driver controls on-/offlining of additional cores based
+	  on current cpu load.
+
 config MSM_CPR
 	tristate "Use MSM CPR in S/W mode"
 	help

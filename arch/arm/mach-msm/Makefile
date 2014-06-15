@@ -375,6 +375,10 @@ ifdef CONFIG_MSM_MPDEC
 obj-y += msm_mpdecision.o
 endif
 
+ifdef CONFIG_MSM_MPDEC_QCOM
+obj-y += msm_mpdecision_qcom.o
+endif
+
 obj-$(CONFIG_MSM_SLEEP_STATS_DEVICE) += idle_stats_device.o
 obj-$(CONFIG_MSM_DCVS) += msm_dcvs_scm.o msm_dcvs.o
 obj-$(CONFIG_FALCON_HOTPLUG) += falcon_hotplug.o
