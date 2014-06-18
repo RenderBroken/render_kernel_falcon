@@ -44,9 +44,6 @@ struct cpu_load_data {
 	u64 prev_cpu_idle;
 	u64 prev_cpu_wall;
 	u64 prev_cpu_iowait;
-#ifdef CONFIG_ALUCARD_HOTPLUG
-	unsigned int cpu_load;
-#endif
 	unsigned int avg_load_maxfreq;
 	unsigned int samples;
 	unsigned int window_size;
@@ -107,9 +104,6 @@ static int update_average_load(unsigned int freq, unsigned int cpu)
 	/* Calculate the scaled load across CPU */
 	load_at_max_freq = (cur_load * policy.cur) / policy.max;
 
-#ifdef CONFIG_ALUCARD_HOTPLUG
-	pcpu->cpu_load = cur_load;
-#endif
 
 	if (!pcpu->avg_load_maxfreq) {
 		/* This is the first sample in this window*/
@@ -148,15 +142,6 @@ static unsigned int report_load_at_max_freq(void)
 	}
 	return total_load;
 }
-
-
-#ifdef CONFIG_ALUCARD_HOTPLUG
-unsigned int report_cpu_load(unsigned int cpu)
-{
-	struct cpu_load_data *pcpu = &per_cpu(cpuload, cpu);
-	return pcpu->cpu_load;
-}
-#endif
 
 static int cpufreq_transition_handler(struct notifier_block *nb,
 			unsigned long val, void *data)
@@ -197,9 +182,6 @@ static int cpu_hotplug_handler(struct notifier_block *nb,
 			this_cpu->cur_freq = cpufreq_quick_get(cpu);
 	case CPU_ONLINE_FROZEN:
 		this_cpu->avg_load_maxfreq = 0;
-#ifdef CONFIG_ALUCARD_HOTPLUG
-		this_cpu->cpu_load = 0;
-#endif
 	}
 
 	return NOTIFY_OK;
@@ -248,30 +230,30 @@ static ssize_t store_hotplug_disable(struct kobject *kobj,
 				     struct kobj_attribute *attr,
 				     const char *buf, size_t count)
 {
-	int ret;
-	unsigned int val;
-	unsigned long flags = 0;
-
-	spin_lock_irqsave(&rq_lock, flags);
-	ret = sscanf(buf, "%u", &val);
-	if (ret != 1 || val < 0 || val > 1)
-		return -EINVAL;
-
-	rq_info.hotplug_disabled = val;
-	spin_unlock_irqrestore(&rq_lock, flags);
-
-	return count;
+	unsigned int val = 0;
+	val = rq_info.hotplug_disabled;
+	return snprintf(buf, MAX_LONG_SIZE, "%d\n", val);
 }
 
-static ssize_t show_hotplug_disable(struct kobject *kobj,
-				    struct kobj_attribute *attr, char *buf)
+static struct kobj_attribute hotplug_disabled_attr = __ATTR_RO(hotplug_disable);
+
+#ifdef CONFIG_MSM_MPDEC
+unsigned int get_rq_info(void)
 {
-	return snprintf(buf, MAX_LONG_SIZE, "%d\n", rq_info.hotplug_disabled);
-}
+	unsigned long flags = 0;
+        unsigned int rq = 0;
 
-static struct kobj_attribute hotplug_disabled_attr =
-	__ATTR(hotplug_disable, S_IWUSR | S_IRUSR, show_hotplug_disable,
-	       store_hotplug_disable);
+        spin_lock_irqsave(&rq_lock, flags);
+
+        rq = rq_info.rq_avg;
+        rq_info.rq_avg = 0;
+
+        spin_unlock_irqrestore(&rq_lock, flags);
+
+        return rq;
+}
+EXPORT_SYMBOL(get_rq_info);
+#endif
 
 static void def_work_fn(struct work_struct *work)
 {
