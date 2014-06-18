@@ -99,7 +99,7 @@ fi
 
 echo "Making ramdisk..."
 if [ -d $ramdisk ]; then
-	mkbootfs $ramdisk | gzip > /home/renderbroken/android/source/out/motog/ramdisk.gz
+	./mkbootfs $ramdisk | gzip > /home/renderbroken/android/source/out/motog/ramdisk.gz
 else
 	echo "No ramdisk found..."
 	exit 0;
@@ -107,7 +107,7 @@ fi
 
 echo "Making boot.img..."
 if [ -f /home/renderbroken/android/source/out/motog/"$kerneltype" ]; then
-	mkbootimg --kernel /home/renderbroken/android/source/out/motog/"$kerneltype" --ramdisk /home/renderbroken/android/source/out/motog/ramdisk.gz --cmdline "$cmdline" --base $base --pagesize $ps --ramdisk_offset $ramdisk_offset --tags_offset $tags_offset -o ozip/boot.img
+	./mkbootimg --kernel /home/renderbroken/android/source/out/motog/"$kerneltype" --ramdisk /home/renderbroken/android/source/out/motog/ramdisk.gz --cmdline "$cmdline" --base $base --pagesize $ps --ramdisk_offset $ramdisk_offset --tags_offset $tags_offset -o ozip/boot.img
 else
 	echo "No $kerneltype found..."
 	exit 0;
