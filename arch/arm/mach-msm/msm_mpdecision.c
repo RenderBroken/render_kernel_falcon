@@ -86,7 +86,7 @@ static struct msm_mpdec_tuners {
 	.scroff_single_core = true,
 	.idle_freq = MSM_MPDEC_IDLE_FREQ,
 	.max_cpus = CONFIG_NR_CPUS,
-	.min_cpus = 1,
+	.min_cpus = 2,
 #ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
 	.boost_enabled = true,
 	.boost_time = MSM_MPDEC_BOOSTTIME,
@@ -99,7 +99,7 @@ static struct msm_mpdec_tuners {
 #endif
 };
 
-static unsigned int NwNs_Threshold[8] = { 10,  0,  20,  7,  25,  10, 0,   18};
+static unsigned int NwNs_Threshold[8] = { 12,  0,  20,  7,  25,  10, 0,   18};
 static unsigned int TwTs_Threshold[8] = {140,  0, 140, 190, 140, 190, 0, 190};
 
 extern unsigned int get_rq_info(void);
